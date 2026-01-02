@@ -9,7 +9,7 @@
 /* ==============================================
 CSS CUSTOM PROPERTIES
 ============================================== */
-.qom-container {
+:root {
   /* Colors */
   --qom-color-primary: #1565c0;
   --qom-color-primary-hover: #0d47a1;
@@ -24,7 +24,7 @@ CSS CUSTOM PROPERTIES
   --qom-color-bg-hover: #f5f5f5;
   /* Typography */
   --qom-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    sans- serif;
+    sans-serif;
   --qom-font-size-sm: 1rem;
   --qom-font-size-base: 1.125rem;
   --qom-font-size-lg: 1.25rem;
@@ -600,9 +600,10 @@ STICKY FOOTER
   left: 0;
   right: 0;
   width: 100%;
-  background: var(--qom-color-bg);
+  background-color: var(--qom-color-bg, #ffffff);
+  background: var(--qom-color-bg, #ffffff);
   border-top: var(--qom-border-width) solid var(--qom-color-border);
-  box-shadow: var(--qom-shadow-lg);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
   z-index: 9999;
   padding: 0;
 }
@@ -612,8 +613,7 @@ STICKY FOOTER
   justify-content: space-between;
   align-items: center;
   gap: var(--qom-spacing-md);
-  padding: 0 1.5rem;
-  min-height: 64px;
+  padding: 1rem 1.5rem;
   width: 100%;
   box-sizing: border-box;
 }
@@ -642,6 +642,7 @@ body>.qom-footer,
   justify-content: flex-start;
   flex: 1;
   text-align: left;
+  display: flex;
 }
 
 .qom-total-items,
@@ -781,8 +782,8 @@ TOAST NOTIFICATION
 
   .qom-footer-content {
     flex-direction: column;
-    padding: var(--qom-spacing-xs) var(--qom-spacing-md);
-    gap: var(--qom-spacing-xs);
+    padding: 1rem var(--qom-spacing-md);
+    gap: var(--qom-spacing-md);
     text-align: center;
     min-height: auto;
   }

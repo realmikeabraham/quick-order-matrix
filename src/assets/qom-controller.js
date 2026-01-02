@@ -358,7 +358,7 @@ function initQOMController() {
         });
       });
 
-      // Apply inline styles for fixed positioning
+      // Apply essential inline styles for fixed positioning, but let classes handle the rest
       Object.assign(footerClone.style, {
         position: 'fixed',
         bottom: '0',
@@ -367,12 +367,11 @@ function initQOMController() {
         width: '100%',
         zIndex: '999999',
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '16px 24px',
-        background: '#ffffff',
-        borderTop: '1px solid #e0e0e0',
-        boxShadow: '0 -4px 12px rgba(0, 0, 0, 0.15)'
+        justifyContent: 'center', // Center the content container
+        padding: '0',
+        margin: '0',
+        visibility: 'visible',
+        opacity: '1'
       });
 
       // Ensure the button exists and is properly set up
@@ -456,41 +455,30 @@ function initQOMController() {
       if (this.totalItems > 0) {
         // Show the totals section with items and price
         if (totalsWithItems) {
-          totalsWithItems.style.display = 'flex';
-          totalsWithItems.style.visibility = 'visible';
-          totalsWithItems.style.opacity = '1';
+          totalsWithItems.style.setProperty('display', 'flex', 'important');
         } else if (allTotals.length > 0) {
           // Fallback: show first totals section
-          allTotals[0].style.display = 'flex';
-          allTotals[0].style.visibility = 'visible';
-        }
-        // Hide empty message section
-        if (emptyMessage) {
-          const emptyTotals = emptyMessage.closest('.qom-totals');
-          if (emptyTotals) {
-            emptyTotals.style.display = 'none';
-            emptyTotals.style.visibility = 'hidden';
-          }
+          allTotals[0].style.setProperty('display', 'flex', 'important');
         }
       } else {
         // Show empty message section
-        if (emptyMessage) {
-          const emptyTotals = emptyMessage.closest('.qom-totals');
-          if (emptyTotals) {
-            emptyTotals.style.display = 'flex';
-            emptyTotals.style.visibility = 'visible';
-            emptyTotals.style.opacity = '1';
-          } else if (allTotals.length > 1) {
-            // Fallback: show second totals section (empty state)
-            allTotals[1].style.display = 'flex';
-            allTotals[1].style.visibility = 'visible';
+        const emptyTotals = clone.querySelector('.qom-totals--empty');
+        if (emptyTotals) {
+          emptyTotals.style.setProperty('display', 'flex', 'important');
+        } else if (emptyMessage) {
+          const parentTotals = emptyMessage.closest('.qom-totals');
+          if (parentTotals) {
+            parentTotals.style.setProperty('display', 'flex', 'important');
           }
         } else if (allTotals.length > 1) {
           // Fallback: show second totals section (empty state)
-          allTotals[1].style.display = 'flex';
-          allTotals[1].style.visibility = 'visible';
+          allTotals[1].style.setProperty('display', 'flex', 'important');
         }
       }
+
+      // Ensure clone itself is visible
+      clone.style.setProperty('visibility', 'visible', 'important');
+      clone.style.setProperty('opacity', '1', 'important');
 
       // Update values in the visible totals section
       const itemsValue = clone.querySelector('.qom-total-items .qom-total-value');
@@ -563,6 +551,7 @@ function initQOMController() {
       document.querySelectorAll(".qom-qty-input").forEach((input) => {
         input.value = "";
       });
+      this.recalculateTotals();
     },
 
     formatMoney(cents) {
@@ -599,65 +588,19 @@ function initQOMController() {
         this.toastTimeout = null;
       }
 
-      // Update Alpine state for original toast (if Alpine is processing it)
+      // Update Alpine state for toast
       this.toast = { show: true, message, type };
-
-      // Also show a manual toast appended to body for reliability
-      this.showManualToast(message, type);
 
       this.toastTimeout = setTimeout(() => {
         this.toast.show = false;
-        this.hideManualToast();
         setTimeout(() => {
           this.toastTimeout = null;
         }, 350);
       }, 3000);
     },
 
-    showManualToast(message, type) {
-      // Remove existing manual toast if any
-      this.hideManualToast();
-
-      // Create toast element
-      const toast = document.createElement('div');
-      toast.className = `qom-toast qom-toast--manual qom-toast--${type}`;
-      toast.id = 'qom-manual-toast';
-      toast.textContent = message;
-
-      // Apply inline styles for positioning
-      Object.assign(toast.style, {
-        position: 'fixed',
-        bottom: '80px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        padding: '12px 24px',
-        borderRadius: '8px',
-        fontSize: '14px',
-        fontWeight: '500',
-        zIndex: '1000000',
-        opacity: '0',
-        transition: 'opacity 0.3s ease',
-        backgroundColor: type === 'success' ? '#10b981' : '#ef4444',
-        color: '#ffffff',
-        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
-      });
-
-      document.body.appendChild(toast);
-
-      // Trigger animation
-      requestAnimationFrame(() => {
-        toast.style.opacity = '1';
-      });
-    },
-
     hideManualToast() {
-      const toast = document.getElementById('qom-manual-toast');
-      if (toast) {
-        toast.style.opacity = '0';
-        setTimeout(() => {
-          toast.remove();
-        }, 300);
-      }
+      // No-op for backward compatibility if called, but can be removed if certain
     },
   }));
 }
