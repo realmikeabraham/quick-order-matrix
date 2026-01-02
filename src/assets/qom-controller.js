@@ -206,7 +206,9 @@ function initQOMController() {
           }
 
           const data = await response.json();
-          addedCount += data.items?.length || batch.length;
+          // Sum the quantities of items in this batch
+          const batchQty = batch.reduce((sum, item) => sum + (item.quantity || 0), 0);
+          addedCount += batchQty;
 
           if (batches.indexOf(batch) < batches.length - 1) {
             await this.delay(100);
