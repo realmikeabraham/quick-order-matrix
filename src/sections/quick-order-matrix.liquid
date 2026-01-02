@@ -46,10 +46,25 @@
 {%- comment -%} Load combined Alpine.js + QOM controller (bundled at build time) {%- endcomment -%}
 <script defer src="{{ 'qom-controller.js' | asset_url }}"></script>
 
-<div
-  id="qom-section-{{ section.id }}"
-  class="qom-container"
-  x-data="qomController"
+{%- style -%}
+  .section-{{ section.id }}-padding {
+    padding-top: {{ section.settings.padding_top | times: 0.75 | round: 0 }}px;
+    padding-bottom: {{ section.settings.padding_bottom | times: 0.75 | round: 0 }}px;
+  }
+
+  @media screen and (min-width: 750px) {
+    .section-{{ section.id }}-padding {
+      padding-top: {{ section.settings.padding_top }}px;
+      padding-bottom: {{ section.settings.padding_bottom }}px;
+    }
+  }
+{%- endstyle -%}
+
+<div class="section-{{ section.id }}-padding">
+  <div
+    id="qom-section-{{ section.id }}"
+    class="qom-container{% unless section.settings.full_width %} page-width{% endunless %}"
+    x-data="qomController"
   data-added-message="{{ section.settings.added_to_cart_message }}"
   data-error-message="{{ section.settings.add_to_cart_error_message }}"
   data-copied-message="{{ section.settings.sku_copied_message }}">
@@ -172,36 +187,38 @@
 
     {%- comment -%} Sticky Footer with Totals {%- endcomment -%}
     <div class="qom-footer">
-      <div class="qom-totals" x-show="totalItems > 0">
-        <div class="qom-total-items">
-          <span class="qom-total-label">{{ section.settings.total_items_label }}:</span>
-          <span class="qom-total-value" x-text="totalItems">0</span>
+      <div class="qom-footer-content{% unless section.settings.full_width %} page-width{% endunless %}">
+        <div class="qom-totals" x-show="totalItems > 0" x-cloak>
+          <div class="qom-total-items">
+            <span class="qom-total-label">{{ section.settings.total_items_label }}:</span>
+            <span class="qom-total-value" x-text="totalItems">0</span>
+          </div>
+          <div class="qom-total-price">
+            <span class="qom-total-label">{{ section.settings.total_estimated_label }}:</span>
+            <span class="qom-total-value" x-text="formatMoney(totalPrice)">$0.00</span>
+          </div>
         </div>
-        <div class="qom-total-price">
-          <span class="qom-total-label">{{ section.settings.total_estimated_label }}:</span>
-          <span class="qom-total-value" x-text="formatMoney(totalPrice)">$0.00</span>
+        <div class="qom-totals qom-totals--empty" x-show="totalItems === 0" x-cloak>
+          <span class="qom-empty-cart-message" style="color: var(--qom-color-text-muted);">No items selected</span>
         </div>
-      </div>
-      <div class="qom-totals" x-show="totalItems === 0" style="flex: 1;">
-        <span class="qom-empty-cart-message" style="color: var(--qom-color-text-muted);">No items selected</span>
-      </div>
 
-      <button
-        type="button"
-        class="qom-add-all-btn"
-        @click="addAllToCart()"
-        :disabled="isSubmitting || totalItems === 0"
-        :class="{ 'qom-btn--loading': isSubmitting }">
-        <span x-show="!isSubmitting" class="qom-btn-content">
-          <svg class="qom-cart-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="9" cy="21" r="1"/>
-            <circle cx="20" cy="21" r="1"/>
-            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
-          </svg>
-          <span>{{ section.settings.add_all_to_cart_label }}</span>
-        </span>
-        <span x-show="isSubmitting" class="qom-spinner"></span>
-      </button>
+        <button
+          type="button"
+          class="qom-add-all-btn"
+          @click="addAllToCart()"
+          :disabled="isSubmitting || totalItems === 0"
+          :class="{ 'qom-btn--loading': isSubmitting }">
+          <span x-show="!isSubmitting" class="qom-btn-content">
+            <svg class="qom-cart-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="9" cy="21" r="1"/>
+              <circle cx="20" cy="21" r="1"/>
+              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+            </svg>
+            <span>{{ section.settings.add_all_to_cart_label }}</span>
+          </span>
+          <span x-show="isSubmitting" class="qom-spinner"></span>
+        </button>
+      </div>
     </div>
   {%- else -%}
     {%- comment -%} No collection selected {%- endcomment -%}
@@ -228,11 +245,12 @@
   {%- comment -%} Branding - can be hidden via section setting {%- endcomment -%}
   {%- unless section.settings.hide_branding -%}
     <div class="qom-branding">
-      <a href="https://apps.shopify.com/quick-order-matrix" target="_blank" rel="noopener">
+      <a href="https://www.matrixb2b.com" target="_blank" rel="noopener">
         Powered by Quick Order Matrix
       </a>
     </div>
   {%- endunless -%}
+</div>
 </div>
 
 {%- comment -%} Money format for JavaScript {%- endcomment -%}
@@ -271,6 +289,36 @@
       "step": 10,
       "default": 50,
       "label": "Products per page"
+    },
+    {
+      "type": "header",
+      "content": "Section Layout"
+    },
+    {
+      "type": "checkbox",
+      "id": "full_width",
+      "label": "Full width",
+      "default": false
+    },
+    {
+      "type": "range",
+      "id": "padding_top",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Padding top",
+      "default": 36
+    },
+    {
+      "type": "range",
+      "id": "padding_bottom",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Padding bottom",
+      "default": 36
     },
     {
       "type": "header",
