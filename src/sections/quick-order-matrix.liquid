@@ -1,0 +1,489 @@
+{%- comment -%}
+  ============================================
+  Quick Order Matrix - Theme Section
+  Version: 1.0.0
+  ============================================
+  A spreadsheet-style bulk ordering interface for B2B stores.
+  For manual theme upload via Shopify Theme Editor.
+
+  Features:
+  - Spreadsheet-style product grid
+  - Inline variant quantity inputs
+  - Batch add-to-cart with rate limiting
+  - Running total calculation
+  - Stock level indicators
+  - Search/filter functionality
+  - Mobile responsive
+{%- endcomment -%}
+
+{%- liquid
+  comment
+    Determine collection context
+    Priority: section setting > page context
+  endcomment
+  if section.settings.collection != blank
+    assign collection_handle = section.settings.collection
+    assign target_collection = collections[collection_handle]
+  elsif collection
+    assign target_collection = collection
+  endif
+
+  comment
+    Section settings
+  endcomment
+  assign products_per_page = section.settings.products_per_page | default: 50
+  assign show_sku = section.settings.show_sku
+  assign show_image = section.settings.show_image
+  assign show_stock = section.settings.show_stock
+  assign low_stock_threshold = section.settings.low_stock_threshold | default: 10
+  assign enable_search = section.settings.enable_search
+  assign variant_layout = section.settings.variant_layout | default: 'compact'
+-%}
+
+{%- comment -%} Load CSS {%- endcomment -%}
+{{ 'qom-styles.css' | asset_url | stylesheet_tag }}
+
+{%- comment -%} Load combined Alpine.js + QOM controller (bundled at build time) {%- endcomment -%}
+<script defer src="{{ 'qom-controller.js' | asset_url }}"></script>
+
+<div
+  id="qom-section-{{ section.id }}"
+  class="qom-container"
+  x-data="qomController"
+  data-added-message="{{ section.settings.added_to_cart_message }}"
+  data-error-message="{{ section.settings.add_to_cart_error_message }}"
+  data-copied-message="{{ section.settings.sku_copied_message }}">
+
+  {%- comment -%} Section Header {%- endcomment -%}
+  <div class="qom-header">
+    <h2 class="qom-title">{{ section.settings.title }}</h2>
+
+    {%- if enable_search -%}
+      <div class="qom-search">
+        <input
+          type="search"
+          class="qom-search-input"
+          x-model="searchQuery"
+          placeholder="{{ section.settings.search_placeholder }}"
+          aria-label="{{ section.settings.accessibility_search }}">
+        <svg class="qom-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/>
+          <path d="m21 21-4.35-4.35"/>
+        </svg>
+      </div>
+    {%- endif -%}
+  </div>
+
+  {%- if target_collection -%}
+    {%- comment -%} Stock Status Legend {%- endcomment -%}
+    {%- if show_stock -%}
+      <div class="qom-stock-legend">
+        <span class="qom-legend-label">{{ section.settings.stock_legend_label | default: 'Stock Status:' }}</span>
+        <div class="qom-legend-items">
+          {%- if variant_layout == 'expanded' -%}
+            {%- comment -%} Expanded view: show dots {%- endcomment -%}
+            <span class="qom-legend-item">
+              <span class="qom-stock-dot qom-stock-dot--in"></span>
+              <span class="qom-legend-text">{{ section.settings.stock_in_label }}</span>
+            </span>
+            <span class="qom-legend-item">
+              <span class="qom-stock-dot qom-stock-dot--low"></span>
+              <span class="qom-legend-text">{{ section.settings.stock_low_label }}</span>
+            </span>
+            <span class="qom-legend-item">
+              <span class="qom-stock-dot qom-stock-dot--out"></span>
+              <span class="qom-legend-text">{{ section.settings.stock_out_label }}</span>
+            </span>
+          {%- else -%}
+            {%- comment -%} Compact view: show colored borders {%- endcomment -%}
+            <span class="qom-legend-item">
+              <span class="qom-legend-border qom-legend-border--in"></span>
+              <span class="qom-legend-text">{{ section.settings.stock_in_label }}</span>
+            </span>
+            <span class="qom-legend-item">
+              <span class="qom-legend-border qom-legend-border--low"></span>
+              <span class="qom-legend-text">{{ section.settings.stock_low_label }}</span>
+            </span>
+            <span class="qom-legend-item">
+              <span class="qom-legend-border qom-legend-border--out"></span>
+              <span class="qom-legend-text">{{ section.settings.stock_out_label }}</span>
+            </span>
+          {%- endif -%}
+        </div>
+      </div>
+    {%- endif -%}
+
+    {%- comment -%} Product Table {%- endcomment -%}
+    <div class="qom-table-wrapper">
+      <table class="qom-table" role="grid">
+        <thead class="qom-thead">
+          <tr>
+            {%- if show_image -%}
+              <th class="qom-th qom-th--image" scope="col">{{ section.settings.column_image }}</th>
+            {%- endif -%}
+            {%- if show_sku -%}
+              <th class="qom-th qom-th--sku" scope="col">{{ section.settings.column_sku }}</th>
+            {%- endif -%}
+            <th class="qom-th qom-th--name" scope="col">{{ section.settings.column_product }}</th>
+            <th class="qom-th qom-th--price" scope="col">{{ section.settings.column_price }}</th>
+            {%- if variant_layout == 'expanded' and show_stock -%}
+              <th class="qom-th qom-th--status" scope="col">{{ section.settings.column_status | default: 'Status' }}</th>
+            {%- endif -%}
+            <th class="qom-th qom-th--quantity" scope="col">{{ section.settings.column_quantity }}</th>
+          </tr>
+        </thead>
+        <tbody class="qom-tbody">
+          {%- assign max_products = 50 -%}
+          {%- if products_per_page > max_products -%}
+            {%- assign products_per_page = max_products -%}
+          {%- endif -%}
+          {%- paginate target_collection.products by products_per_page -%}
+            {%- for product in target_collection.products -%}
+              {%- render 'qom-product-row'
+                , product: product
+                , show_sku: show_sku
+                , show_image: show_image
+                , show_stock: show_stock
+                , low_stock_threshold: low_stock_threshold
+                , variant_layout: variant_layout
+                , section: section
+              -%}
+            {%- endfor -%}
+            {%- if paginate.pages > 1 -%}
+              <tr>
+                <td colspan="5" class="qom-pagination">
+                  {%- if paginate.previous -%}
+                    <a href="{{ paginate.previous.url }}" class="qom-pagination-link">← Previous</a>
+                  {%- endif -%}
+                  <span class="qom-pagination-info">
+                    Page {{ paginate.current_page }} of {{ paginate.pages }}
+                    ({{ target_collection.products_count }} total products)
+                  </span>
+                  {%- if paginate.next -%}
+                    <a href="{{ paginate.next.url }}" class="qom-pagination-link">Next →</a>
+                  {%- endif -%}
+                </td>
+              </tr>
+            {%- endif -%}
+          {%- endpaginate -%}
+        </tbody>
+      </table>
+    </div>
+
+    {%- comment -%} Sticky Footer with Totals {%- endcomment -%}
+    <div class="qom-footer">
+      <div class="qom-totals" x-show="totalItems > 0">
+        <div class="qom-total-items">
+          <span class="qom-total-label">{{ section.settings.total_items_label }}:</span>
+          <span class="qom-total-value" x-text="totalItems">0</span>
+        </div>
+        <div class="qom-total-price">
+          <span class="qom-total-label">{{ section.settings.total_estimated_label }}:</span>
+          <span class="qom-total-value" x-text="formatMoney(totalPrice)">$0.00</span>
+        </div>
+      </div>
+      <div class="qom-totals" x-show="totalItems === 0" style="flex: 1;">
+        <span class="qom-empty-cart-message" style="color: var(--qom-color-text-muted);">No items selected</span>
+      </div>
+
+      <button
+        type="button"
+        class="qom-add-all-btn"
+        @click="addAllToCart()"
+        :disabled="isSubmitting || totalItems === 0"
+        :class="{ 'qom-btn--loading': isSubmitting }">
+        <span x-show="!isSubmitting" class="qom-btn-content">
+          <svg class="qom-cart-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="21" r="1"/>
+            <circle cx="20" cy="21" r="1"/>
+            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+          </svg>
+          <span>{{ section.settings.add_all_to_cart_label }}</span>
+        </span>
+        <span x-show="isSubmitting" class="qom-spinner"></span>
+      </button>
+    </div>
+  {%- else -%}
+    {%- comment -%} No collection selected {%- endcomment -%}
+    <div class="qom-empty-state">
+      <p>{{ section.settings.empty_no_collection_message }}</p>
+    </div>
+  {%- endif -%}
+
+  {%- comment -%} Toast Notification {%- endcomment -%}
+  <div
+    class="qom-toast"
+    x-show="toast.show && toast.message"
+    x-transition:enter="qom-toast-enter"
+    x-transition:enter-start="qom-toast-enter-start"
+    x-transition:enter-end="qom-toast-enter-end"
+    x-transition:leave="qom-toast-leave"
+    x-transition:leave-start="qom-toast-leave-start"
+    x-transition:leave-end="qom-toast-leave-end"
+    :class="{ 'qom-toast--success': toast.type === 'success', 'qom-toast--error': toast.type === 'error' }"
+    x-cloak>
+    <span x-text="toast.message"></span>
+  </div>
+
+  {%- comment -%} Branding - can be hidden via section setting {%- endcomment -%}
+  {%- unless section.settings.hide_branding -%}
+    <div class="qom-branding">
+      <a href="https://apps.shopify.com/quick-order-matrix" target="_blank" rel="noopener">
+        Powered by Quick Order Matrix
+      </a>
+    </div>
+  {%- endunless -%}
+</div>
+
+{%- comment -%} Money format for JavaScript {%- endcomment -%}
+<script>
+  window.qomMoneyFormat = {{ shop.money_format | json }};
+</script>
+
+{% schema %}
+{
+  "name": "Quick Order Matrix",
+  "tag": "section",
+  "class": "qom-section",
+  "presets": [
+    {
+      "name": "Quick Order Matrix"
+    }
+  ],
+  "settings": [
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Section Title",
+      "default": "Quick Order"
+    },
+    {
+      "type": "collection",
+      "id": "collection",
+      "label": "Collection",
+      "info": "Select a collection. Leave blank to use page context."
+    },
+    {
+      "type": "range",
+      "id": "products_per_page",
+      "min": 10,
+      "max": 50,
+      "step": 10,
+      "default": 50,
+      "label": "Products per page"
+    },
+    {
+      "type": "header",
+      "content": "Display Options"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_image",
+      "default": true,
+      "label": "Show product images"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_sku",
+      "default": true,
+      "label": "Show SKU column"
+    },
+    {
+      "type": "select",
+      "id": "variant_layout",
+      "label": "Variant display layout",
+      "options": [
+        { "value": "compact", "label": "Compact (variants grouped per row)" },
+        { "value": "expanded", "label": "Expanded (one row per variant)" }
+      ],
+      "default": "compact",
+      "info": "Expanded shows each variant as its own row with dedicated SKU."
+    },
+    {
+      "type": "checkbox",
+      "id": "show_stock",
+      "default": true,
+      "label": "Show stock indicators"
+    },
+    {
+      "type": "range",
+      "id": "low_stock_threshold",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "default": 10,
+      "label": "Low stock threshold"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_search",
+      "default": true,
+      "label": "Enable search/filter"
+    },
+    {
+      "type": "header",
+      "content": "Labels & Text"
+    },
+    {
+      "type": "text",
+      "id": "search_placeholder",
+      "label": "Search placeholder",
+      "default": "Search products..."
+    },
+    {
+      "type": "text",
+      "id": "column_image",
+      "label": "Image column header",
+      "default": "Image"
+    },
+    {
+      "type": "text",
+      "id": "column_sku",
+      "label": "SKU column header",
+      "default": "SKU"
+    },
+    {
+      "type": "text",
+      "id": "column_product",
+      "label": "Product column header",
+      "default": "Product"
+    },
+    {
+      "type": "text",
+      "id": "column_price",
+      "label": "Price column header",
+      "default": "Price"
+    },
+    {
+      "type": "text",
+      "id": "column_quantity",
+      "label": "Quantity column header",
+      "default": "Quantity"
+    },
+    {
+      "type": "text",
+      "id": "column_status",
+      "label": "Status column header",
+      "default": "Status"
+    },
+    {
+      "type": "text",
+      "id": "stock_legend_label",
+      "label": "Stock legend label",
+      "default": "Stock Status:"
+    },
+    {
+      "type": "text",
+      "id": "total_items_label",
+      "label": "Total items label",
+      "default": "Items"
+    },
+    {
+      "type": "text",
+      "id": "total_estimated_label",
+      "label": "Estimated total label",
+      "default": "Est. Total"
+    },
+    {
+      "type": "text",
+      "id": "add_all_to_cart_label",
+      "label": "Add all to cart button",
+      "default": "Add All to Cart"
+    },
+    {
+      "type": "text",
+      "id": "empty_no_collection_message",
+      "label": "No collection message",
+      "default": "Please select a collection in the section settings."
+    },
+    {
+      "type": "text",
+      "id": "copy_sku_action_label",
+      "label": "Copy SKU button label",
+      "default": "Copy SKU"
+    },
+    {
+      "type": "text",
+      "id": "copy_sku_accessibility_label",
+      "label": "Copy SKU accessibility label",
+      "default": "Copy SKU to clipboard"
+    },
+    {
+      "type": "text",
+      "id": "price_from_label",
+      "label": "Price from label",
+      "default": "From"
+    },
+    {
+      "type": "text",
+      "id": "stock_in_label",
+      "label": "In stock label",
+      "default": "In Stock"
+    },
+    {
+      "type": "text",
+      "id": "stock_low_label",
+      "label": "Low stock label",
+      "default": "Low Stock"
+    },
+    {
+      "type": "text",
+      "id": "stock_out_label",
+      "label": "Out of stock label",
+      "default": "Out of Stock"
+    },
+    {
+      "type": "text",
+      "id": "stock_available_label",
+      "label": "Available label",
+      "default": "Available"
+    },
+    {
+      "type": "text",
+      "id": "quantity_for_label",
+      "label": "Quantity for label",
+      "default": "Quantity for"
+    },
+    {
+      "type": "text",
+      "id": "quantity_for_variant_label",
+      "label": "Quantity for variant label",
+      "default": "Quantity for"
+    },
+    {
+      "type": "text",
+      "id": "added_to_cart_message",
+      "label": "Added to cart message",
+      "default": "items added to cart"
+    },
+    {
+      "type": "text",
+      "id": "add_to_cart_error_message",
+      "label": "Add to cart error message",
+      "default": "Failed to add items. Please try again."
+    },
+    {
+      "type": "text",
+      "id": "sku_copied_message",
+      "label": "SKU copied message",
+      "default": "SKU copied!"
+    },
+    {
+      "type": "text",
+      "id": "accessibility_search",
+      "label": "Search accessibility label",
+      "default": "Search products"
+    },
+    {
+      "type": "header",
+      "content": "Advanced Options"
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_branding",
+      "default": false,
+      "label": "Hide branding"
+    }
+  ]
+}
+{% endschema %}

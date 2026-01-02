@@ -1,0 +1,18 @@
+{
+  "name": "quick-order-matrix",
+  "version": "1.0.0",
+  "description": "Standalone bulk ordering section for Shopify",
+  "scripts": {
+    "dev": "node scripts/sync-to-theme.js --watch",
+    "build": "node scripts/build.js",
+    "package": "node scripts/package.js",
+    "test": "node tests/browser-test.js",
+    "theme:dev": "shopify theme dev --store $SHOPIFY_STORE --path test-theme",
+    "theme:pull": "shopify theme pull --store $SHOPIFY_STORE --path test-theme"
+  },
+  "devDependencies": {
+    "archiver": "^6.0.0",
+    "chokidar": "^3.6.0",
+    "fs-extra": "^11.3.0"
+  }
+}

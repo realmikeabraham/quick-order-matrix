@@ -1,0 +1,46 @@
+{%- comment -%}
+  Quick Order Matrix - Stock Badge
+  Parameters:
+  variant: The product variant object
+  low_stock_threshold: Number below which to show "low stock" (default: 10)
+  display_mode: "dot_only" or "dot_text" (default: dot_only)
+  section: The section object (for translations/settings)
+{%- endcomment -%}
+{%- liquid
+  assign threshold = low_stock_threshold | default: 10
+  assign inventory = variant.inventory_quantity | default: 0
+  assign policy = variant.inventory_policy
+  assign tracking = variant.inventory_management
+  assign display_mode = display_mode | default: 'dot_only'
+
+  comment
+    Determine stock status
+    Note: "available" (no tracking/continue policy) and "in stock" (tracked with inventory) 
+    are both treated as "in" status since they both allow ordering
+  endcomment
+  if tracking == blank or policy == 'continue'
+    assign stock_status = 'in'
+    assign stock_label = section.settings.stock_in_label
+  elsif inventory <= 0
+    assign stock_status = 'out'
+    assign stock_label = section.settings.stock_out_label
+  elsif inventory <= threshold
+    assign stock_status = 'low'
+    assign stock_label = section.settings.stock_low_label | append: ' (' | append: inventory | append: ')'
+  else
+    assign stock_status = 'in'
+    assign stock_label = section.settings.stock_in_label
+  endif
+-%}
+<span
+  class="qom-stock-badge qom-stock-badge--{{ stock_status }} qom-stock-badge--{{ display_mode }}"
+  {%- if display_mode == 'dot_only' %}
+    title="{{ stock_label }}"
+    aria-label="{{ stock_label }}"
+  {%- endif %}
+>
+  <span class="qom-stock-dot"></span>
+  {%- if display_mode == 'dot_text' -%}
+    {{ stock_label }}
+  {%- endif -%}
+</span>

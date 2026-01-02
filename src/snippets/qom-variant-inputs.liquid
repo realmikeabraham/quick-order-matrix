@@ -1,0 +1,163 @@
+{%- comment -%}
+  Quick Order Matrix - Variant Inputs
+  Renders quantity inputs for all variants of a product.
+  For products with single variant, renders one input.
+  For products with multiple variants, renders a grid with inline SKUs.
+  Parameters:
+  product: The product object
+  show_stock: Boolean to show stock badges
+  low_stock_threshold: Threshold for low stock warning
+  section: The section object (for translations/settings)
+{%- endcomment -%}
+{%- liquid
+  if show_stock == nil
+    assign show_stock = true
+  endif
+  assign threshold = low_stock_threshold | default: 10
+  assign variant_count = product.variants | size
+-%}
+<div class="qom-variant-inputs" data-product-id="{{ product.id }}">
+  {%- if variant_count == 1 -%}
+    {%- comment -%} Simple product - single input {%- endcomment -%}
+    {%- assign variant = product.variants.first -%}
+    {%- liquid
+      comment
+        Determine if input should be disabled based on stock status logic
+        Only disable if truly out of stock (inventory tracking enabled, inventory <= 0, and policy is deny)
+      endcomment
+      assign inventory = variant.inventory_quantity | default: 0
+      assign policy = variant.inventory_policy
+      assign tracking = variant.inventory_management
+      assign should_disable = false
+      if tracking != blank and policy != 'continue' and inventory <= 0
+        assign should_disable = true
+      elsif variant.available == false and tracking != blank and policy != 'continue'
+        assign should_disable = true
+      endif
+    -%}
+    {%- liquid
+      comment
+        Determine stock status for input styling (compact view uses border colors)
+      endcomment
+      assign inventory = variant.inventory_quantity | default: 0
+      assign policy = variant.inventory_policy
+      assign tracking = variant.inventory_management
+      assign stock_status_class = ''
+      assign stock_tooltip = ''
+      if tracking == blank or policy == 'continue'
+        assign stock_status_class = 'qom-qty-input--stock-in'
+        assign stock_tooltip = section.settings.stock_in_label
+      elsif inventory <= 0
+        assign stock_status_class = 'qom-qty-input--stock-out'
+        assign stock_tooltip = section.settings.stock_out_label
+      elsif inventory <= threshold
+        assign stock_status_class = 'qom-qty-input--stock-low'
+        assign stock_tooltip = section.settings.stock_low_label | append: ' (' | append: inventory | append: ')'
+      else
+        assign stock_status_class = 'qom-qty-input--stock-in'
+        assign stock_tooltip = section.settings.stock_in_label
+      endif
+    -%}
+    <div class="qom-single-variant">
+      <input
+        type="number"
+        class="qom-qty-input{% if show_stock %} {{ stock_status_class }}{% endif %}"
+        x-model.number="quantities[{{ variant.id }}]"
+        @input="
+          updateQuantity({{ variant.id }}, $event.target.value,
+          {{ variant.price }})
+        "
+        data-variant-id="{{ variant.id }}"
+        data-price="{{ variant.price }}"
+        min="0"
+        max="{{ variant.inventory_quantity | default: 9999 }}"
+        placeholder="0"
+        {%- if should_disable %}disabled{%- endif %}
+        {%- if show_stock %}title="{{ stock_tooltip }}"{%- endif %}
+        aria-label="{{ section.settings.quantity_for_label }} {{ product.title }}"
+      >
+    </div>
+  {%- else -%}
+    {%- comment -%} Product with variants - render matrix with inline SKUs {%- endcomment -%}
+    <div class="qom-variant-matrix">
+      {%- for variant in product.variants -%}
+        {%- liquid
+          comment
+            Determine if input should be disabled based on stock status logic
+            Only disable if truly out of stock (inventory tracking enabled, inventory <= 0, and policy is deny)
+          endcomment
+          assign inventory = variant.inventory_quantity | default: 0
+          assign policy = variant.inventory_policy
+          assign tracking = variant.inventory_management
+          assign should_disable = false
+          if tracking != blank and policy != 'continue' and inventory <= 0
+            assign should_disable = true
+          elsif variant.available == false and tracking != blank and policy != 'continue'
+            assign should_disable = true
+          endif
+        -%}
+        <div class="qom-variant-cell" data-variant-id="{{ variant.id }}">
+          <span class="qom-variant-label">{{ variant.title }}</span>
+          {%- comment -%} Inline SKU with copy button {%- endcomment -%}
+          <div class="qom-variant-sku">
+            <span class="qom-sku qom-sku--small">{{ variant.sku | default: '-' }}</span>
+            {%- if variant.sku != blank -%}
+              <button
+                type="button"
+                class="qom-copy-btn qom-copy-btn--small"
+                @click="copyToClipboard('{{ variant.sku | escape }}')"
+                title="{{ section.settings.copy_sku_action_label }}"
+                aria-label="{{ section.settings.copy_sku_accessibility_label }}: {{ variant.sku }}"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+            {%- endif -%}
+          </div>
+          {%- liquid
+            comment
+              Determine stock status for input styling (compact view uses border colors)
+            endcomment
+            assign inventory = variant.inventory_quantity | default: 0
+            assign policy = variant.inventory_policy
+            assign tracking = variant.inventory_management
+            assign stock_status_class = ''
+            assign stock_tooltip = ''
+            if tracking == blank or policy == 'continue'
+              assign stock_status_class = 'qom-qty-input--stock-in'
+              assign stock_tooltip = section.settings.stock_in_label
+            elsif inventory <= 0
+              assign stock_status_class = 'qom-qty-input--stock-out'
+              assign stock_tooltip = section.settings.stock_out_label
+            elsif inventory <= threshold
+              assign stock_status_class = 'qom-qty-input--stock-low'
+              assign stock_tooltip = section.settings.stock_low_label | append: ' (' | append: inventory | append: ')'
+            else
+              assign stock_status_class = 'qom-qty-input--stock-in'
+              assign stock_tooltip = section.settings.stock_in_label
+            endif
+          -%}
+          <input
+            type="number"
+            class="qom-qty-input{% if show_stock %} {{ stock_status_class }}{% endif %}"
+            x-model.number="quantities[{{ variant.id }}]"
+            @input="
+              updateQuantity({{ variant.id }}, $event.target.value,
+              {{ variant.price }})
+            "
+            data-variant-id="{{ variant.id }}"
+            data-price="{{ variant.price }}"
+            min="0"
+            max="{{ variant.inventory_quantity | default: 9999 }}"
+            placeholder="0"
+            {%- if should_disable %}disabled{%- endif %}
+            {%- if show_stock %}title="{{ stock_tooltip }}"{%- endif %}
+            aria-label="{{ section.settings.quantity_for_variant_label }} {{ product.title }} - {{ variant.title }}"
+          >
+        </div>
+      {%- endfor -%}
+    </div>
+  {%- endif -%}
+</div>

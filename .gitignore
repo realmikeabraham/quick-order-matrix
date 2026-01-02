@@ -1,0 +1,7 @@
+node_modules/
+dist/
+test-theme/
+.DS_Store
+*.log
+.env
+.shopify/

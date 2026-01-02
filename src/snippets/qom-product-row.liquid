@@ -1,0 +1,251 @@
+{%- comment -%}
+  Quick Order Matrix - Product Row
+  Renders a single product row with image, details, and variant inputs.
+  For expanded layout, renders multiple rows (one per variant).
+  Parameters:
+  product: The product object
+  show_sku: Boolean to show SKU column
+  show_image: Boolean to show product image
+  show_stock: Boolean to show stock badges
+  image_size: Size of thumbnail (e.g., "50x50")
+  low_stock_threshold: Threshold for low stock warning
+  variant_layout: "compact" or "expanded" (default: compact)
+  section: The section object (for translations/settings)
+{%- endcomment -%}
+{%- liquid
+  assign show_sku = show_sku | default: true
+  assign show_image = show_image | default: true
+  if show_stock == nil
+    assign show_stock = true
+  endif
+  assign image_size = image_size | default: '50x50'
+  assign threshold = low_stock_threshold | default: 10
+  assign variant_layout = variant_layout | default: 'compact'
+  assign first_variant = product.variants.first
+
+  comment
+    Collect all SKUs from all variants for search
+  endcomment
+  assign all_skus = ''
+  for variant in product.variants
+    if variant.sku != blank
+      if all_skus != blank
+        assign all_skus = all_skus | append: '|'
+      endif
+      assign all_skus = all_skus | append: variant.sku
+    endif
+  endfor
+-%}
+
+{%- if variant_layout == 'expanded' -%}
+  {%- comment -%} EXPANDED LAYOUT: One row per variant {%- endcomment -%}
+  {%- for variant in product.variants -%}
+    {%- assign is_first = forloop.first -%}
+    {%- assign is_last = forloop.last -%}
+    <tr
+      class="qom-product-row qom-product-row--expanded{% if is_first %} qom-product-row--first{% endif %}{% if is_last %} qom-product-row--last{% endif %}"
+      data-product-id="{{ product.id }}"
+      data-variant-id="{{ variant.id }}"
+      data-product-title="{{ product.title | escape }}"
+      data-product-sku="{{ all_skus | escape }}"
+      x-show="!searchQuery || searchQuery.trim() === '' || isProductVisibleByData('{{ product.title | escape }}', '{{ all_skus | escape }}')"
+    >
+      {%- comment -%} Image Column - only content on first row {%- endcomment -%}
+      {%- if show_image -%}
+        <td class="qom-cell qom-cell--image">
+          {%- if is_first -%}
+            {%- if product.featured_image -%}
+              <img
+                src="{{ product.featured_image | image_url: width: 100 }}"
+                alt="{{ product.featured_image.alt | escape }}"
+                width="50"
+                height="50"
+                loading="lazy"
+                class="qom-product-image"
+              >
+            {%- else -%}
+              <div class="qom-product-image qom-product-image--placeholder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5"/>
+                  <path d="M21 15l-5-5L5 21"/>
+                </svg>
+              </div>
+            {%- endif -%}
+          {%- endif -%}
+        </td>
+      {%- endif -%}
+
+      {%- comment -%} SKU Column - each variant's SKU {%- endcomment -%}
+      {%- if show_sku -%}
+        <td class="qom-cell qom-cell--sku">
+          <div class="qom-sku-wrapper">
+            <span class="qom-sku">{{ variant.sku | default: '-' }}</span>
+            {%- if variant.sku != blank -%}
+              <button
+                type="button"
+                class="qom-copy-btn"
+                @click="copyToClipboard('{{ variant.sku | escape }}')"
+                title="{{ section.settings.copy_sku_action_label }}"
+                aria-label="{{ section.settings.copy_sku_accessibility_label }}"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+            {%- endif -%}
+          </div>
+        </td>
+      {%- endif -%}
+
+      {%- comment -%} Product Name Column - product title on first row, variant title always {%- endcomment -%}
+      <td class="qom-cell qom-cell--name">
+        {%- if is_first -%}
+          <a href="{{ product.url }}" class="qom-product-link" target="_blank">
+            {{ product.title }}
+          </a>
+          {%- if product.vendor != blank -%}
+            <span class="qom-product-vendor">{{ product.vendor }}</span>
+          {%- endif -%}
+        {%- endif -%}
+        <span class="qom-variant-title">{{ variant.title }}</span>
+      </td>
+
+      {%- comment -%} Price Column - variant price {%- endcomment -%}
+      <td class="qom-cell qom-cell--price">
+        <span class="qom-price">{{ variant.price | money }}</span>
+        {%- if variant.compare_at_price > variant.price -%}
+          <span class="qom-compare-price">{{ variant.compare_at_price | money }}</span>
+        {%- endif -%}
+      </td>
+
+      {%- comment -%} Status Column - stock status dot (expanded view only) {%- endcomment -%}
+      {%- if show_stock -%}
+        <td class="qom-cell qom-cell--status">
+          {%- render 'qom-stock-badge', variant: variant, low_stock_threshold: threshold, display_mode: 'dot_only', section: section -%}
+        </td>
+      {%- endif -%}
+
+      {%- comment -%} Quantity Column - single input for this variant {%- endcomment -%}
+      {%- liquid
+        comment
+          Determine if input should be disabled based on stock status logic
+          Only disable if truly out of stock (inventory tracking enabled, inventory <= 0, and policy is deny)
+        endcomment
+        assign inventory = variant.inventory_quantity | default: 0
+        assign policy = variant.inventory_policy
+        assign tracking = variant.inventory_management
+        assign should_disable = false
+        if tracking != blank and policy != 'continue' and inventory <= 0
+          assign should_disable = true
+        elsif variant.available == false and tracking != blank and policy != 'continue'
+          assign should_disable = true
+        endif
+      -%}
+      <td class="qom-cell qom-cell--quantity">
+        <div class="qom-single-variant qom-single-variant--expanded">
+          <input
+            type="number"
+            class="qom-qty-input"
+            x-model.number="quantities[{{ variant.id }}]"
+            @input="updateQuantity({{ variant.id }}, $event.target.value, {{ variant.price }})"
+            data-variant-id="{{ variant.id }}"
+            data-price="{{ variant.price }}"
+            min="0"
+            max="{{ variant.inventory_quantity | default: 9999 }}"
+            placeholder="0"
+            {%- if should_disable %}disabled{%- endif %}
+            aria-label="{{ section.settings.quantity_for_variant_label }} {{ product.title }} - {{ variant.title }}"
+          >
+        </div>
+      </td>
+    </tr>
+  {%- endfor -%}
+{%- else -%}
+  {%- comment -%} COMPACT LAYOUT: Original single row per product {%- endcomment -%}
+  <tr
+    class="qom-product-row"
+    data-product-id="{{ product.id }}"
+    data-product-title="{{ product.title | escape }}"
+    data-product-sku="{{ all_skus | escape }}"
+    x-show="!searchQuery || searchQuery.trim() === '' || isProductVisibleByData('{{ product.title | escape }}', '{{ all_skus | escape }}')"
+  >
+    {%- comment -%} Image Column {%- endcomment -%}
+    {%- if show_image -%}
+      <td class="qom-cell qom-cell--image">
+        {%- if product.featured_image -%}
+          <img
+            src="{{ product.featured_image | image_url: width: 100 }}"
+            alt="{{ product.featured_image.alt | escape }}"
+            width="50"
+            height="50"
+            loading="lazy"
+            class="qom-product-image"
+          >
+        {%- else -%}
+          <div class="qom-product-image qom-product-image--placeholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <path d="M21 15l-5-5L5 21"/>
+            </svg>
+          </div>
+        {%- endif -%}
+      </td>
+    {%- endif -%}
+
+    {%- comment -%} SKU Column {%- endcomment -%}
+    {%- if show_sku -%}
+      <td class="qom-cell qom-cell--sku">
+        <div class="qom-sku-wrapper">
+          <span class="qom-sku">{{ first_variant.sku | default: '-' }}</span>
+          {%- if first_variant.sku != blank -%}
+            <button
+              type="button"
+              class="qom-copy-btn"
+              @click="copyToClipboard('{{ first_variant.sku | escape }}')"
+              title="{{ block.settings.copy_sku_action_label }}"
+              aria-label="{{ block.settings.copy_sku_accessibility_label }}"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+          {%- endif -%}
+        </div>
+      </td>
+    {%- endif -%}
+
+    {%- comment -%} Product Name Column {%- endcomment -%}
+    <td class="qom-cell qom-cell--name">
+      <a href="{{ product.url }}" class="qom-product-link" target="_blank">
+        {{ product.title }}
+      </a>
+      {%- if product.vendor != blank -%}
+        <span class="qom-product-vendor">{{ product.vendor }}</span>
+      {%- endif -%}
+    </td>
+
+    {%- comment -%} Price Column {%- endcomment -%}
+    <td class="qom-cell qom-cell--price">
+      {%- if product.price_varies -%}
+        <span class="qom-price">
+          {{ section.settings.price_from_label }}
+          {{ product.price_min | money }}
+        </span>
+      {%- else -%}
+        <span class="qom-price">{{ product.price | money }}</span>
+      {%- endif -%}
+      {%- if product.compare_at_price > product.price -%}
+        <span class="qom-compare-price">{{ product.compare_at_price | money }}</span>
+      {%- endif -%}
+    </td>
+
+    {%- comment -%} Quantity Inputs Column {%- endcomment -%}
+    <td class="qom-cell qom-cell--quantity">
+      {%- render 'qom-variant-inputs', product: product, show_stock: show_stock, low_stock_threshold: threshold, section: section -%}
+    </td>
+  </tr>
+{%- endif -%}
