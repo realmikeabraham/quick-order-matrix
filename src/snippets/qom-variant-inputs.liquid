@@ -58,24 +58,51 @@
         assign stock_tooltip = section.settings.stock_in_label
       endif
     -%}
+    {%- liquid
+      comment
+        Determine maximum allowed quantity based on inventory settings
+      endcomment
+      assign inventory = variant.inventory_quantity | default: 0
+      assign policy = variant.inventory_policy
+      assign tracking = variant.inventory_management
+      assign max_qty = 999999
+      if tracking != blank and policy != 'continue'
+        assign max_qty = inventory
+      endif
+      if max_qty < 0
+        assign max_qty = 0
+      endif
+    -%}
     <div class="qom-single-variant">
-      <input
-        type="number"
-        class="qom-qty-input{% if show_stock %} {{ stock_status_class }}{% endif %}"
-        x-model.number="quantities[{{ variant.id }}]"
-        @input="
-          updateQuantity({{ variant.id }}, $event.target.value,
-          {{ variant.price }})
-        "
-        data-variant-id="{{ variant.id }}"
-        data-price="{{ variant.price }}"
-        min="0"
-        max="{{ variant.inventory_quantity | default: 9999 }}"
-        placeholder="0"
-        {%- if should_disable %}disabled{%- endif %}
-        {%- if show_stock %}title="{{ stock_tooltip }}"{%- endif %}
-        aria-label="{{ section.settings.quantity_for_label }} {{ product.title }}"
-      >
+      <div class="qom-qty-field{% if show_stock %} {{ stock_status_class }}{% endif %}" {%- if show_stock %}title="{{ stock_tooltip }}"{%- endif %}>
+        <button
+          type="button"
+          class="qom-qty-btn qom-qty-btn--minus"
+          @click="decrement({{ variant.id }}, {{ variant.price }}, {{ max_qty }})"
+          {% if should_disable %}disabled{% else %}:disabled="!quantities[{{ variant.id }}] || quantities[{{ variant.id }}] <= 0"{% endif %}
+          aria-label="Decrease quantity"
+        >&minus;</button>
+        <input
+          type="number"
+          class="qom-qty-input"
+          x-model.number="quantities[{{ variant.id }}]"
+          @input="updateQuantity({{ variant.id }}, $event.target.value, {{ variant.price }}, {{ max_qty }})"
+          data-variant-id="{{ variant.id }}"
+          data-price="{{ variant.price }}"
+          min="0"
+          max="{{ max_qty }}"
+          placeholder="0"
+          {%- if should_disable %}disabled{%- endif %}
+          aria-label="{{ section.settings.quantity_for_label }} {{ product.title }}"
+        >
+        <button
+          type="button"
+          class="qom-qty-btn qom-qty-btn--plus"
+          @click="increment({{ variant.id }}, {{ variant.price }}, {{ max_qty }})"
+          {% if should_disable %}disabled{% endif %}
+          aria-label="Increase quantity"
+        >&plus;</button>
+      </div>
     </div>
   {%- else -%}
     {%- comment -%} Product with variants - render matrix with inline SKUs {%- endcomment -%}
@@ -94,6 +121,17 @@
             assign should_disable = true
           elsif variant.available == false and tracking != blank and policy != 'continue'
             assign should_disable = true
+          endif
+
+          comment
+            Determine maximum allowed quantity based on inventory settings
+          endcomment
+          assign max_qty = 999999
+          if tracking != blank and policy != 'continue'
+            assign max_qty = inventory
+          endif
+          if max_qty < 0
+            assign max_qty = 0
           endif
         -%}
         <div class="qom-variant-cell" data-variant-id="{{ variant.id }}">
@@ -139,23 +177,35 @@
               assign stock_tooltip = section.settings.stock_in_label
             endif
           -%}
-          <input
-            type="number"
-            class="qom-qty-input{% if show_stock %} {{ stock_status_class }}{% endif %}"
-            x-model.number="quantities[{{ variant.id }}]"
-            @input="
-              updateQuantity({{ variant.id }}, $event.target.value,
-              {{ variant.price }})
-            "
-            data-variant-id="{{ variant.id }}"
-            data-price="{{ variant.price }}"
-            min="0"
-            max="{{ variant.inventory_quantity | default: 9999 }}"
-            placeholder="0"
-            {%- if should_disable %}disabled{%- endif %}
-            {%- if show_stock %}title="{{ stock_tooltip }}"{%- endif %}
-            aria-label="{{ section.settings.quantity_for_variant_label }} {{ product.title }} - {{ variant.title }}"
-          >
+          <div class="qom-qty-field{% if show_stock %} {{ stock_status_class }}{% endif %}" {%- if show_stock %}title="{{ stock_tooltip }}"{%- endif %}>
+            <button
+              type="button"
+              class="qom-qty-btn qom-qty-btn--minus"
+              @click="decrement({{ variant.id }}, {{ variant.price }}, {{ max_qty }})"
+              {% if should_disable %}disabled{% else %}:disabled="!quantities[{{ variant.id }}] || quantities[{{ variant.id }}] <= 0"{% endif %}
+              aria-label="Decrease quantity"
+            >&minus;</button>
+            <input
+              type="number"
+              class="qom-qty-input"
+              x-model.number="quantities[{{ variant.id }}]"
+              @input="updateQuantity({{ variant.id }}, $event.target.value, {{ variant.price }}, {{ max_qty }})"
+              data-variant-id="{{ variant.id }}"
+              data-price="{{ variant.price }}"
+              min="0"
+              max="{{ max_qty }}"
+              placeholder="0"
+              {%- if should_disable %}disabled{%- endif %}
+              aria-label="{{ section.settings.quantity_for_variant_label }} {{ product.title }} - {{ variant.title }}"
+            >
+            <button
+              type="button"
+              class="qom-qty-btn qom-qty-btn--plus"
+              @click="increment({{ variant.id }}, {{ variant.price }}, {{ max_qty }})"
+              {% if should_disable %}disabled{% endif %}
+              aria-label="Increase quantity"
+            >&plus;</button>
+          </div>
         </div>
       {%- endfor -%}
     </div>

@@ -40,6 +40,7 @@ function initQOMController() {
       type: "success", // "success" | "error"
     },
     toastTimeout: null,
+    showClearConfirm: false,
     messages: {
       added: "",
       error: "",
@@ -84,10 +85,17 @@ function initQOMController() {
     // -------------------------
     // Quantity Management
     // -------------------------
-    updateQuantity(variantId, quantity, price) {
-      const qty = parseInt(quantity) || 0;
-      // Keep variantId as number to match x-model.number binding
+    updateQuantity(variantId, quantity, price, max) {
+      let qty = parseInt(quantity) || 0;
       const variantIdNum = parseInt(variantId) || variantId;
+      const maxQty = (max !== undefined && max !== null) ? parseInt(max) : 999999;
+
+      // Cap quantity at max available stock
+      if (qty > maxQty) {
+        qty = maxQty;
+        // Update the bound model so the input reflects the capped value
+        this.quantities[variantIdNum] = qty;
+      }
 
       if (qty > 0) {
         this.quantities[variantIdNum] = qty;
@@ -97,9 +105,30 @@ function initQOMController() {
         delete this.prices[variantIdNum];
       }
 
-      // Recalculate totals immediately - Alpine.js will detect the change via deep watch
+      // Recalculate totals immediately
       this.recalculateTotals();
     },
+
+    increment(variantId, price, max) {
+      const variantIdNum = parseInt(variantId) || variantId;
+      const currentQty = this.quantities[variantIdNum] || 0;
+      const maxQty = (max !== undefined && max !== null) ? parseInt(max) : 999999;
+
+      if (currentQty < maxQty) {
+        this.updateQuantity(variantIdNum, currentQty + 1, price, maxQty);
+      }
+    },
+
+    decrement(variantId, price, max) {
+      const variantIdNum = parseInt(variantId) || variantId;
+      const currentQty = this.quantities[variantIdNum] || 0;
+      const maxQty = (max !== undefined && max !== null) ? parseInt(max) : 999999;
+
+      if (currentQty > 0) {
+        this.updateQuantity(variantIdNum, currentQty - 1, price, maxQty);
+      }
+    },
+
 
     recalculateTotals() {
       let items = 0;
@@ -360,59 +389,25 @@ function initQOMController() {
         });
       });
 
-      // Apply essential inline styles for fixed positioning, but let classes handle the rest
-      Object.assign(footerClone.style, {
-        position: 'fixed',
-        bottom: '0',
-        left: '0',
-        right: '0',
-        width: '100%',
-        zIndex: '999999',
-        display: 'flex',
-        justifyContent: 'center', // Center the content container
-        padding: '0',
-        margin: '0',
-        visibility: 'visible',
-        opacity: '1'
-      });
+      // Apply essential inline styles for fixed positioning
+      footerClone.classList.add('qom-footer--clone');
 
       // Ensure the button exists and is properly set up
       const addBtn = footerClone.querySelector('.qom-add-all-btn');
       if (addBtn) {
-        // Clear and rebuild button content to ensure it's visible
-        // Include cart icon and text, spinner should be hidden by default
-        addBtn.innerHTML = `
-          <span class="qom-btn-content">
-            <svg class="qom-cart-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="9" cy="21" r="1"/>
-              <circle cx="20" cy="21" r="1"/>
-              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
-            </svg>
-            <span>${buttonLabel}</span>
-          </span>
-          <span class="qom-spinner" style="display: none !important; visibility: hidden !important;"></span>
-        `;
-
-        // Apply explicit inline styles to ensure button is visible
-        Object.assign(addBtn.style, {
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '12px 24px',
-          backgroundColor: '#2563eb',
-          color: '#ffffff',
-          border: 'none',
-          borderRadius: '6px',
-          fontSize: '14px',
-          fontWeight: '600',
-          cursor: 'pointer',
-          visibility: 'visible',
-          opacity: '1'
-        });
-
+        // Just set up the event listener, styling is handled by CSS
         addBtn.addEventListener('click', (e) => {
           e.preventDefault();
           this.addAllToCart();
+        });
+      }
+
+      const clearAllBtn = footerClone.querySelector('.qom-clear-all');
+      if (clearAllBtn) {
+        // Explicitly set up the clear all button from the clone
+        clearAllBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.resetQuantities();
         });
       }
 
@@ -523,6 +518,12 @@ function initQOMController() {
         }
       }
 
+      // Handle clear all link visibility
+      const clearAllBtn = clone.querySelector('.qom-clear-all');
+      if (clearAllBtn) {
+        clearAllBtn.style.display = this.totalItems > 0 ? 'inline-block' : 'none';
+      }
+
       // Handle export button if present
       const exportBtn = clone.querySelector('.qom-export-btn');
       if (exportBtn) {
@@ -546,6 +547,10 @@ function initQOMController() {
     },
 
     resetQuantities() {
+      this.showClearConfirm = true;
+    },
+
+    confirmReset() {
       this.quantities = {};
       this.prices = {};
       this.totalItems = 0;
@@ -554,6 +559,11 @@ function initQOMController() {
         input.value = "";
       });
       this.recalculateTotals();
+      this.showClearConfirm = false;
+    },
+
+    cancelReset() {
+      this.showClearConfirm = false;
     },
 
     formatMoney(cents) {

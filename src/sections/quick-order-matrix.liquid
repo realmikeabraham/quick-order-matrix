@@ -79,9 +79,9 @@
           type="search"
           class="qom-search-input"
           x-model="searchQuery"
-          placeholder="{{ section.settings.search_placeholder }}"
+          placeholder="{{ section.settings.search_placeholder | default: 'Search by SKU or name...' }}"
           aria-label="{{ section.settings.accessibility_search }}">
-        <svg class="qom-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="qom-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/>
           <path d="m21 21-4.35-4.35"/>
         </svg>
@@ -202,22 +202,34 @@
           <span class="qom-empty-cart-message" style="color: var(--qom-color-text-muted);">No items selected</span>
         </div>
 
-        <button
-          type="button"
-          class="qom-add-all-btn"
-          @click="addAllToCart()"
-          :disabled="isSubmitting || totalItems === 0"
-          :class="{ 'qom-btn--loading': isSubmitting }">
-          <span x-show="!isSubmitting" class="qom-btn-content">
-            <svg class="qom-cart-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="9" cy="21" r="1"/>
-              <circle cx="20" cy="21" r="1"/>
-              <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
-            </svg>
-            <span>{{ section.settings.add_all_to_cart_label }}</span>
-          </span>
-          <span x-show="isSubmitting" class="qom-spinner"></span>
-        </button>
+        <div class="qom-footer-actions">
+          <button
+            type="button"
+            class="qom-clear-all"
+            @click="resetQuantities()"
+            x-show="totalItems > 0"
+            x-cloak
+          >
+            Clear all
+          </button>
+
+          <button
+            type="button"
+            class="qom-add-all-btn"
+            @click="addAllToCart()"
+            :disabled="isSubmitting || totalItems === 0"
+            :class="{ 'qom-btn--loading': isSubmitting }">
+            <span x-show="!isSubmitting" class="qom-btn-content">
+              <svg class="qom-cart-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="9" cy="21" r="1"/>
+                <circle cx="20" cy="21" r="1"/>
+                <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+              </svg>
+              <span>{{ section.settings.add_all_to_cart_label }}</span>
+            </span>
+            <span x-show="isSubmitting" class="qom-spinner"></span>
+          </button>
+        </div>
       </div>
     </div>
   {%- else -%}
@@ -237,10 +249,45 @@
     x-transition:leave="qom-toast-leave"
     x-transition:leave-start="qom-toast-leave-start"
     x-transition:leave-end="qom-toast-leave-end"
-    :class="{ 'qom-toast--success': toast.type === 'success', 'qom-toast--error': toast.type === 'error' }"
-    x-cloak>
+    :class="'qom-toast--' + toast.type"
+    @click="toast.show = false">
     <span x-text="toast.message"></span>
   </div>
+
+  {%- comment -%} Custom Confirmation Modal {%- endcomment -%}
+  <template x-teleport="body">
+    <div
+      class="qom-modal-backdrop"
+      x-show="showClearConfirm"
+      x-transition:opacity
+      x-cloak
+      @click="cancelReset()"
+    >
+      <div
+        class="qom-modal"
+        @click.stop
+        x-show="showClearConfirm"
+        x-transition:scale.80
+        x-transition:opacity
+      >
+        <div class="qom-modal-header">
+          <h3 class="qom-modal-title">Clear all quantities?</h3>
+          <button type="button" class="qom-modal-close" @click="cancelReset()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="qom-modal-body">
+          <p>This will reset all your selected quantities to zero. This action cannot be undone.</p>
+        </div>
+        <div class="qom-modal-footer">
+          <button type="button" class="qom-btn qom-btn--outline" @click="cancelReset()">Cancel</button>
+          <button type="button" class="qom-btn qom-btn--danger" @click="confirmReset()">Clear All</button>
+        </div>
+      </div>
+    </div>
+  </template>
 
   {%- comment -%} Branding - can be hidden via section setting {%- endcomment -%}
   {%- unless section.settings.hide_branding -%}
@@ -375,8 +422,8 @@
     {
       "type": "text",
       "id": "search_placeholder",
-      "label": "Search placeholder",
-      "default": "Search products..."
+      "label": "Search by SKU or name...",
+      "default": "Search by SKU or name..."
     },
     {
       "type": "text",
