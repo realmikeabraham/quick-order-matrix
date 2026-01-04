@@ -47,6 +47,12 @@ function initQOMController() {
       copied: ""
     },
     _footerClone: null,
+    // Search index for products across all pages
+    productIndex: [], // Array of { id, title, skus: [], variantIds: [], fullProduct: {...} }
+    isLoadingProducts: false,
+    productIndexLoaded: false,
+    matchingProducts: [], // Products that match current search (for dynamic rendering)
+    originalTbodyContent: null, // Store original tbody HTML for restoration
 
     // -------------------------
     // Initialization
@@ -75,6 +81,28 @@ function initQOMController() {
       this.$watch('quantities', () => {
         this.recalculateTotals();
       }, { deep: true });
+
+      // Store original tbody content for restoration
+      const tbody = this.$el.querySelector('.qom-tbody');
+      if (tbody) {
+        this.originalTbodyContent = tbody.innerHTML;
+      }
+
+      // Watch search query for lazy loading product index and filtering
+      this.$watch('searchQuery', (newQuery) => {
+        if (newQuery && newQuery.trim()) {
+          if (!this.productIndexLoaded && !this.isLoadingProducts) {
+            this.loadAllProducts().then(() => {
+              this.filterAndRenderProducts();
+            });
+          } else if (this.productIndexLoaded) {
+            this.filterAndRenderProducts();
+          }
+        } else {
+          // Restore original content when search is cleared
+          this.restoreOriginalProducts();
+        }
+      });
 
       // Initial footer update after a short delay to ensure DOM is ready
       setTimeout(() => {
@@ -183,13 +211,14 @@ function initQOMController() {
       return false;
     },
 
-    isProductVisibleByData(title, skuString) {
+    isProductVisibleByData(title, skuString, productId = null) {
       if (!this.searchQuery || !this.searchQuery.trim()) return true;
 
       const query = this.searchQuery.toLowerCase().trim();
       const titleLower = String(title || '').toLowerCase();
       const skuStringLower = String(skuString || '').toLowerCase();
 
+      // First check the DOM data (for products on current page)
       if (titleLower.includes(query)) return true;
 
       if (skuStringLower) {
@@ -199,7 +228,586 @@ function initQOMController() {
         }
       }
 
+      // If product index is loaded and we have a product ID, check the index
+      if (this.productIndexLoaded && this.productIndex.length > 0 && productId) {
+        return this.isProductIdVisible(productId);
+      }
+
+      // Fallback: if we have title, try to match against index by title
+      if (this.productIndexLoaded && this.productIndex.length > 0 && titleLower) {
+        const matchingProduct = this.productIndex.find(product => {
+          const productTitle = String(product.title || '').toLowerCase();
+          return productTitle === titleLower || productTitle.includes(query);
+        });
+        if (matchingProduct) {
+          // Verify the match by checking if search query matches
+          const productTitle = String(matchingProduct.title || '').toLowerCase();
+          if (productTitle.includes(query)) return true;
+
+          // Check SKUs in matching product
+          if (matchingProduct.skus && matchingProduct.skus.length > 0) {
+            for (const sku of matchingProduct.skus) {
+              if (sku && sku.toLowerCase().includes(query)) return true;
+            }
+          }
+        }
+      }
+
       return false;
+    },
+
+    // Check if a product ID matches the search query using the index
+    isProductIdVisible(productId) {
+      if (!this.searchQuery || !this.searchQuery.trim()) return true;
+      if (!this.productIndexLoaded || this.productIndex.length === 0) return false;
+
+      const query = this.searchQuery.toLowerCase().trim();
+      // Convert both to strings for comparison (API might return number, template might be string)
+      const productIdStr = String(productId);
+      const product = this.productIndex.find(p => String(p.id) === productIdStr);
+
+      if (!product) return false;
+
+      // Check title
+      const title = String(product.title || '').toLowerCase();
+      if (title.includes(query)) return true;
+
+      // Check SKUs
+      if (product.skus && product.skus.length > 0) {
+        for (const sku of product.skus) {
+          if (sku && sku.toLowerCase().includes(query)) return true;
+        }
+      }
+
+      return false;
+    },
+
+    // Load all products from collection API (up to 200)
+    async loadAllProducts() {
+      if (this.isLoadingProducts || this.productIndexLoaded) return;
+
+      const collectionHandle = this.$el.getAttribute('data-collection-handle');
+      if (!collectionHandle) {
+        console.warn('QOM: No collection handle found, cannot load products for search');
+        return;
+      }
+
+      this.isLoadingProducts = true;
+      const maxProducts = 200;
+      const productsPerPage = 250; // Maximum allowed by Shopify storefront API
+      const maxPages = Math.ceil(maxProducts / productsPerPage);
+      const allProducts = [];
+      const seenProductIds = new Set();
+      let currentPage = 1;
+
+      try {
+        while (allProducts.length < maxProducts && currentPage <= maxPages) {
+          // Always include page parameter for consistency, and add limit for larger page sizes
+          const url = `/collections/${collectionHandle}/products.json?page=${currentPage}&limit=${productsPerPage}`;
+
+          let response;
+          try {
+            response = await fetch(url);
+          } catch (networkError) {
+            console.warn('QOM: Network error fetching products, trying fallback URL', networkError);
+            // Fallback to original endpoint format
+            const fallbackUrl = `/collections/${collectionHandle}.json?page=${currentPage}`;
+            response = await fetch(fallbackUrl);
+          }
+
+          if (!response.ok) {
+            // Try alternative endpoint format if first one fails
+            if (currentPage === 1) {
+              const altUrl = `/collections/${collectionHandle}.json`;
+              const altResponse = await fetch(altUrl);
+              if (altResponse.ok) {
+                const altData = await altResponse.json();
+                const altProducts = altData.products || [];
+                for (const product of altProducts) {
+                  if (!seenProductIds.has(product.id) && allProducts.length < maxProducts) {
+                    seenProductIds.add(product.id);
+                    allProducts.push(this.createProductIndexEntry(product));
+                  }
+                }
+              }
+            }
+            break;
+          }
+
+          const data = await response.json();
+          const products = data.products || [];
+
+          if (products.length === 0) break; // No more products
+
+          // Process products and add to index (avoid duplicates)
+          for (const product of products) {
+            if (allProducts.length >= maxProducts) break;
+
+            // Skip if we've already seen this product
+            if (seenProductIds.has(product.id)) continue;
+            seenProductIds.add(product.id);
+
+            allProducts.push(this.createProductIndexEntry(product));
+          }
+
+          // If we got fewer products than requested, we've likely reached the end
+          if (products.length < productsPerPage) break;
+
+          currentPage++;
+        }
+
+        this.productIndex = allProducts;
+        this.productIndexLoaded = true;
+        console.log(`QOM: Loaded ${allProducts.length} products for search index`);
+      } catch (error) {
+        console.error('QOM: Failed to load products for search', error);
+        // Fallback: mark as loaded with empty index to prevent retries
+        this.productIndex = [];
+        this.productIndexLoaded = true;
+      } finally {
+        this.isLoadingProducts = false;
+      }
+    },
+
+    // Helper to create a product index entry from API response
+    createProductIndexEntry(product) {
+      const skus = [];
+      const variantIds = [];
+
+      // Collect all SKUs and variant IDs
+      if (product.variants && product.variants.length > 0) {
+        for (const variant of product.variants) {
+          if (variant.sku) {
+            skus.push(variant.sku);
+          }
+          if (variant.id) {
+            variantIds.push(variant.id);
+          }
+        }
+      }
+
+      return {
+        id: product.id,
+        title: product.title || '',
+        handle: product.handle || '',
+        skus: skus,
+        variantIds: variantIds,
+        fullProduct: product // Store full product data for rendering
+      };
+    },
+
+    // Get matching products from index based on search query
+    getMatchingProducts() {
+      if (!this.searchQuery || !this.searchQuery.trim()) {
+        return [];
+      }
+
+      if (!this.productIndexLoaded || this.productIndex.length === 0) {
+        return [];
+      }
+
+      const query = this.searchQuery.toLowerCase().trim();
+      const matches = [];
+
+      for (const product of this.productIndex) {
+        let isMatch = false;
+
+        // Check title
+        const title = String(product.title || '').toLowerCase();
+        if (title.includes(query)) {
+          isMatch = true;
+        }
+
+        // Check SKUs
+        if (!isMatch && product.skus && product.skus.length > 0) {
+          for (const sku of product.skus) {
+            if (sku && sku.toLowerCase().includes(query)) {
+              isMatch = true;
+              break;
+            }
+          }
+        }
+
+        if (isMatch && product.fullProduct) {
+          matches.push(product.fullProduct);
+        }
+      }
+
+      return matches;
+    },
+
+    // Get count of matching products from search index
+    getSearchResultCount() {
+      if (!this.searchQuery || !this.searchQuery.trim()) {
+        return null; // No search active
+      }
+
+      if (!this.productIndexLoaded || this.productIndex.length === 0) {
+        // Count visible products in DOM as fallback
+        const visibleRows = this.$el.querySelectorAll('.qom-product-row:not([style*="display: none"])');
+        return visibleRows.length;
+      }
+
+      return this.getMatchingProducts().length;
+    },
+
+    // Filter products and render matching ones dynamically
+    async filterAndRenderProducts() {
+      if (!this.searchQuery || !this.searchQuery.trim()) {
+        this.restoreOriginalProducts();
+        return;
+      }
+
+      const tbody = this.$el.querySelector('.qom-tbody');
+      if (!tbody) return;
+
+      // Get section settings from data attributes
+      const variantLayout = this.$el.getAttribute('data-variant-layout') || 'compact';
+      const showSku = this.$el.getAttribute('data-show-sku') !== 'false';
+      const showImage = this.$el.getAttribute('data-show-image') !== 'false';
+      const showStock = this.$el.getAttribute('data-show-stock') !== 'false';
+
+      // Get matching products from index
+      const matchingProducts = this.getMatchingProducts();
+      this.matchingProducts = matchingProducts;
+
+      // Get all currently rendered product IDs
+      const currentProductIds = new Set();
+      const currentRows = tbody.querySelectorAll('.qom-product-row:not(.qom-product-row--dynamic)');
+      currentRows.forEach(row => {
+        const productId = row.getAttribute('data-product-id');
+        if (productId) {
+          currentProductIds.add(String(productId));
+        }
+      });
+
+      // Hide all current product rows first
+      currentRows.forEach(row => {
+        row.style.display = 'none';
+      });
+
+      // Hide pagination row
+      const paginationRow = tbody.querySelector('.qom-pagination');
+      if (paginationRow) {
+        paginationRow.style.display = 'none';
+      }
+
+      // Remove any existing dynamically rendered products
+      const existingDynamic = tbody.querySelectorAll('.qom-product-row--dynamic');
+      existingDynamic.forEach(row => row.remove());
+
+      // Render matching products
+      const searchQuery = this.searchQuery.toLowerCase().trim();
+
+      for (const product of matchingProducts) {
+        const productIdStr = String(product.id);
+
+        // Check if this product is already rendered on current page
+        const existingRow = tbody.querySelector(`[data-product-id="${productIdStr}"]:not(.qom-product-row--dynamic)`);
+        if (existingRow) {
+          // Product is on current page, show it
+          existingRow.style.display = '';
+          continue;
+        }
+
+        // Product is not on current page, render it dynamically with search query for variant filtering
+        await this.renderProductRow(product, tbody, variantLayout, showSku, showImage, showStock, searchQuery);
+      }
+    },
+
+    // Render a single product row dynamically
+    async renderProductRow(product, tbody, variantLayout, showSku, showImage, showStock, searchQuery = '') {
+      const lowStockThreshold = parseInt(this.$el.getAttribute('data-low-stock-threshold')) || 10;
+
+      // Fetch full product data if we don't have complete variant data
+      if (!product.variants || product.variants.length === 0 || !product.variants[0].price) {
+        try {
+          const productHandle = product.handle || product.id;
+          const productUrl = `/products/${productHandle}.json`;
+          const response = await fetch(productUrl);
+          if (response.ok) {
+            const productData = await response.json();
+            if (productData.product) {
+              product = productData.product;
+            }
+          }
+        } catch (e) {
+          console.warn('QOM: Could not fetch product data', e);
+        }
+      }
+
+      // Filter variants based on search query if provided
+      let variantsToShow = product.variants || [];
+      if (searchQuery && variantsToShow.length > 1) {
+        // Check if search matches product title - if so, show all variants
+        const productTitle = (product.title || '').toLowerCase();
+        const titleMatches = productTitle.includes(searchQuery);
+
+        if (!titleMatches) {
+          // Search doesn't match title, so filter to only variants that match
+          const filteredVariants = variantsToShow.filter(variant => {
+            const sku = (variant.sku || '').toLowerCase();
+            const title = (variant.title || '').toLowerCase();
+            return sku.includes(searchQuery) || title.includes(searchQuery);
+          });
+
+          // Only use filtered list if we found matches, otherwise show all
+          if (filteredVariants.length > 0) {
+            variantsToShow = filteredVariants;
+          }
+        }
+      }
+
+      // Collect SKUs from filtered variants
+      const allSkus = [];
+      for (const variant of variantsToShow) {
+        if (variant.sku) {
+          allSkus.push(variant.sku);
+        }
+      }
+      const skuString = allSkus.join('|');
+      const escapedTitle = this.escapeHtmlDynamic(product.title || '');
+
+      // Create row element
+      const row = document.createElement('tr');
+      row.className = 'qom-product-row qom-product-row--dynamic';
+      row.setAttribute('data-product-id', product.id);
+      row.setAttribute('data-product-title', product.title || '');
+      row.setAttribute('data-product-sku', skuString);
+
+      let rowHTML = '';
+
+      // Image column
+      if (showImage !== 'false' && showImage !== false) {
+        const imageUrl = this.escapeHtmlDynamic(product.featured_image || product.images?.[0]?.src || '');
+        rowHTML += '<td class="qom-cell qom-cell--image">';
+        if (imageUrl) {
+          rowHTML += `<img src="${imageUrl}" alt="${escapedTitle}" width="50" height="50" loading="lazy" class="qom-product-image">`;
+        } else {
+          rowHTML += '<div class="qom-product-image qom-product-image--placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></div>';
+        }
+        rowHTML += '</td>';
+      }
+
+      // SKU column
+      if (showSku !== 'false' && showSku !== false) {
+        const firstSku = this.escapeHtmlDynamic(allSkus[0] || '-');
+        rowHTML += `<td class="qom-cell qom-cell--sku"><div class="qom-sku-wrapper"><span class="qom-sku">${firstSku}</span></div></td>`;
+      }
+
+      // Name column
+      const productPageUrl = `/products/${product.handle || product.id}`;
+      rowHTML += `<td class="qom-cell qom-cell--name"><a href="${productPageUrl}" class="qom-product-link" target="_blank">${escapedTitle}</a></td>`;
+
+      // Price column - use first filtered variant for price
+      const firstVariant = variantsToShow?.[0] || product.variants?.[0];
+      const displayPrice = this.parseProductPrice(firstVariant?.price);
+      const moneyFormat = window.qomMoneyFormat || '${{amount}}';
+      const formattedPrice = moneyFormat.replace('{{amount}}', displayPrice);
+      rowHTML += `<td class="qom-cell qom-cell--price"><span class="qom-price">${formattedPrice}</span></td>`;
+
+      // Quantity column - use filtered variantsToShow instead of product.variants
+      rowHTML += `<td class="qom-cell qom-cell--quantity"><div class="qom-variant-inputs" data-product-id="${product.id}">`;
+
+      if (variantsToShow && variantsToShow.length > 0) {
+        const variantCount = variantsToShow.length;
+        const showStockBool = showStock !== 'false' && showStock !== false;
+
+        if (variantCount === 1) {
+          // Single variant - simple layout
+          const variant = variantsToShow[0];
+          const vData = this.getVariantStockData(variant, lowStockThreshold);
+
+          rowHTML += '<div class="qom-single-variant">';
+          rowHTML += `<div class="qom-qty-field${showStockBool ? ' ' + vData.stockClass : ''}"${vData.stockTooltip ? ` title="${vData.stockTooltip}"` : ''}>`;
+          rowHTML += this.buildDynamicVariantInputs(variant, vData);
+          rowHTML += '</div></div>';
+        } else {
+          // Multiple variants - matrix layout
+          rowHTML += '<div class="qom-variant-matrix">';
+          for (const variant of variantsToShow) {
+            const vData = this.getVariantStockData(variant, lowStockThreshold);
+            const variantTitle = this.escapeHtmlDynamic(variant.title || 'Default');
+            const variantSku = this.escapeHtmlDynamic(variant.sku || '-');
+
+            rowHTML += `<div class="qom-variant-cell" data-variant-id="${variant.id}">`;
+            rowHTML += `<span class="qom-variant-label">${variantTitle}</span>`;
+            rowHTML += `<div class="qom-variant-sku"><span class="qom-sku qom-sku--small">${variantSku}</span></div>`;
+            rowHTML += `<div class="qom-qty-field${showStockBool ? ' ' + vData.stockClass : ''}"${vData.stockTooltip ? ` title="${vData.stockTooltip}"` : ''}>`;
+            rowHTML += this.buildDynamicVariantInputs(variant, vData);
+            rowHTML += '</div></div>';
+          }
+          rowHTML += '</div>';
+        }
+      }
+      rowHTML += '</div></td>';
+
+      row.innerHTML = rowHTML;
+      tbody.appendChild(row);
+
+      // Bind native event handlers to dynamically created elements
+      // Using native JS instead of Alpine to avoid double-firing of events
+      this.bindDynamicEventHandlers(row);
+    },
+
+    // Helper: Parse product price from storefront API (returns price as "35.00" not cents)
+    parseProductPrice(priceValue) {
+      if (!priceValue) return '0.00';
+      const priceStr = String(priceValue);
+      const priceNum = parseFloat(priceStr);
+      // Storefront API returns "35.00" format, not cents
+      // If price has decimal or is < 1000, treat as dollars; otherwise as cents
+      if (priceStr.includes('.') || priceNum < 1000) {
+        return priceNum.toFixed(2);
+      }
+      // Fallback for cents format
+      return (priceNum / 100).toFixed(2);
+    },
+
+    // Helper: Get variant stock status data
+    getVariantStockData(variant, threshold) {
+      const inventory = variant.inventory_quantity ?? 0;
+      const policy = variant.inventory_policy || 'deny';
+      const tracking = variant.inventory_management;
+
+      let stockClass = '';
+      let stockTooltip = '';
+      let shouldDisable = false;
+      let maxQty = 999999;
+
+      if (!tracking || policy === 'continue') {
+        stockClass = 'qom-qty-input--stock-in';
+        stockTooltip = 'In Stock';
+      } else if (inventory <= 0) {
+        stockClass = 'qom-qty-input--stock-out';
+        stockTooltip = 'Out of Stock';
+        shouldDisable = true;
+        maxQty = 0;
+      } else if (inventory <= threshold) {
+        stockClass = 'qom-qty-input--stock-low';
+        stockTooltip = `Low Stock (${inventory})`;
+        maxQty = inventory;
+      } else {
+        stockClass = 'qom-qty-input--stock-in';
+        stockTooltip = 'In Stock';
+        maxQty = inventory;
+      }
+
+      // Price in cents for the controller functions
+      const priceStr = String(variant.price || 0);
+      const priceNum = parseFloat(priceStr);
+      let priceInCents;
+      if (priceStr.includes('.') || priceNum < 1000) {
+        priceInCents = Math.round(priceNum * 100);
+      } else {
+        priceInCents = Math.round(priceNum);
+      }
+
+      return { stockClass, stockTooltip, shouldDisable, maxQty: Math.max(0, maxQty), priceInCents };
+    },
+
+    // Helper: Build variant input HTML - uses data attributes for native JS event binding
+    buildDynamicVariantInputs(variant, data) {
+      const { shouldDisable, maxQty, priceInCents } = data;
+      let html = '';
+
+      if (shouldDisable) {
+        html += `<button type="button" class="qom-qty-btn qom-qty-btn--minus" disabled aria-label="Decrease quantity">&minus;</button>`;
+        html += `<input type="number" class="qom-qty-input" data-variant-id="${variant.id}" data-price="${priceInCents}" min="0" max="0" placeholder="0" disabled>`;
+        html += `<button type="button" class="qom-qty-btn qom-qty-btn--plus" disabled aria-label="Increase quantity">&plus;</button>`;
+      } else {
+        html += `<button type="button" class="qom-qty-btn qom-qty-btn--minus qom-dynamic-minus" data-variant-id="${variant.id}" data-price="${priceInCents}" data-max="${maxQty}" aria-label="Decrease quantity">&minus;</button>`;
+        html += `<input type="number" class="qom-qty-input qom-dynamic-input" data-variant-id="${variant.id}" data-price="${priceInCents}" min="0" max="${maxQty}" placeholder="0">`;
+        html += `<button type="button" class="qom-qty-btn qom-qty-btn--plus qom-dynamic-plus" data-variant-id="${variant.id}" data-price="${priceInCents}" data-max="${maxQty}" aria-label="Increase quantity">&plus;</button>`;
+      }
+      return html;
+    },
+
+    // Bind event handlers to dynamically created elements (called after row is added to DOM)
+    bindDynamicEventHandlers(row) {
+      const self = this;
+
+      // Bind minus buttons
+      row.querySelectorAll('.qom-dynamic-minus').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const variantId = parseInt(this.getAttribute('data-variant-id'));
+          const price = parseInt(this.getAttribute('data-price'));
+          const max = parseInt(this.getAttribute('data-max'));
+          self.decrement(variantId, price, max);
+          self.updateDynamicInputValue(variantId);
+        });
+      });
+
+      // Bind plus buttons
+      row.querySelectorAll('.qom-dynamic-plus').forEach(btn => {
+        btn.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          const variantId = parseInt(this.getAttribute('data-variant-id'));
+          const price = parseInt(this.getAttribute('data-price'));
+          const max = parseInt(this.getAttribute('data-max'));
+          self.increment(variantId, price, max);
+          self.updateDynamicInputValue(variantId);
+        });
+      });
+
+      // Bind inputs
+      row.querySelectorAll('.qom-dynamic-input').forEach(input => {
+        input.addEventListener('input', function (e) {
+          const variantId = parseInt(this.getAttribute('data-variant-id'));
+          const price = parseInt(this.getAttribute('data-price'));
+          const max = parseInt(this.getAttribute('max')) || 999999;
+          const value = parseInt(this.value) || 0;
+          self.updateQuantity(variantId, value, price, max);
+        });
+      });
+    },
+
+    // Update dynamic input value to match state
+    updateDynamicInputValue(variantId) {
+      const input = document.querySelector(`.qom-dynamic-input[data-variant-id="${variantId}"]`);
+      if (input) {
+        const qty = this.quantities[variantId] || 0;
+        input.value = qty > 0 ? qty : '';
+      }
+    },
+
+    // Helper: Escape HTML for dynamic content
+    escapeHtmlDynamic(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    },
+
+
+    // Restore original products when search is cleared
+    restoreOriginalProducts() {
+      const tbody = this.$el.querySelector('.qom-tbody');
+      if (!tbody || !this.originalTbodyContent) return;
+
+      // Remove dynamically rendered products
+      const dynamicRows = tbody.querySelectorAll('.qom-product-row--dynamic');
+      dynamicRows.forEach(row => row.remove());
+
+      // Show all original rows
+      const originalRows = tbody.querySelectorAll('.qom-product-row:not(.qom-product-row--dynamic)');
+      originalRows.forEach(row => {
+        row.style.display = '';
+      });
+
+      // Show pagination
+      const paginationRow = tbody.querySelector('.qom-pagination');
+      if (paginationRow) {
+        paginationRow.style.display = '';
+      }
+
+      this.matchingProducts = [];
     },
 
     // -------------------------

@@ -65,9 +65,15 @@
     id="qom-section-{{ section.id }}"
     class="qom-container{% unless section.settings.full_width %} page-width{% endunless %}"
     x-data="qomController"
-  data-added-message="{{ section.settings.added_to_cart_message }}"
-  data-error-message="{{ section.settings.add_to_cart_error_message }}"
-  data-copied-message="{{ section.settings.sku_copied_message }}">
+    data-added-message="{{ section.settings.added_to_cart_message }}"
+    data-error-message="{{ section.settings.add_to_cart_error_message }}"
+    data-copied-message="{{ section.settings.sku_copied_message }}"
+    {%- if target_collection -%}data-collection-handle="{{ target_collection.handle }}"{%- endif -%}
+    data-variant-layout="{{ variant_layout }}"
+    data-show-sku="{{ show_sku }}"
+    data-show-image="{{ show_image }}"
+    data-show-stock="{{ show_stock }}"
+    data-low-stock-threshold="{{ low_stock_threshold }}">
 
   {%- comment -%} Section Header {%- endcomment -%}
   <div class="qom-header">
@@ -85,6 +91,9 @@
           <circle cx="11" cy="11" r="8"/>
           <path d="m21 21-4.35-4.35"/>
         </svg>
+        <span x-show="isLoadingProducts" class="qom-search-loading" x-cloak style="position: absolute; right: 40px; top: 50%; transform: translateY(-50%); color: #6b7280; font-size: 0.875rem;">
+          Loading products...
+        </span>
       </div>
     {%- endif -%}
   </div>
@@ -167,16 +176,26 @@
             {%- if paginate.pages > 1 -%}
               <tr>
                 <td colspan="5" class="qom-pagination">
-                  {%- if paginate.previous -%}
-                    <a href="{{ paginate.previous.url }}" class="qom-pagination-link">← Previous</a>
-                  {%- endif -%}
-                  <span class="qom-pagination-info">
-                    Page {{ paginate.current_page }} of {{ paginate.pages }}
-                    ({{ target_collection.products_count }} total products)
-                  </span>
-                  {%- if paginate.next -%}
-                    <a href="{{ paginate.next.url }}" class="qom-pagination-link">Next →</a>
-                  {%- endif -%}
+                  <div x-show="!searchQuery || searchQuery.trim() === ''">
+                    {%- if paginate.previous -%}
+                      <a href="{{ paginate.previous.url }}" class="qom-pagination-link">← Previous</a>
+                    {%- endif -%}
+                    <span class="qom-pagination-info">
+                      Page {{ paginate.current_page }} of {{ paginate.pages }}
+                      ({{ target_collection.products_count }} total products)
+                    </span>
+                    {%- if paginate.next -%}
+                      <a href="{{ paginate.next.url }}" class="qom-pagination-link">Next →</a>
+                    {%- endif -%}
+                  </div>
+                  <div x-show="searchQuery && searchQuery.trim() !== ''" x-cloak>
+                    <span class="qom-pagination-info">
+                      <span x-text="'Showing ' + (getSearchResultCount() || 0) + ' matching products'"></span>
+                      <span x-show="isLoadingProducts" style="margin-left: 8px; color: #6b7280; font-size: 0.9em;">
+                        (Loading products...)
+                      </span>
+                    </span>
+                  </div>
                 </td>
               </tr>
             {%- endif -%}

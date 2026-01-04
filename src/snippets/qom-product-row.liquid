@@ -48,7 +48,7 @@
       data-variant-id="{{ variant.id }}"
       data-product-title="{{ product.title | escape }}"
       data-product-sku="{{ all_skus | escape }}"
-      x-show="!searchQuery || searchQuery.trim() === '' || isProductVisibleByData('{{ product.title | escape }}', '{{ all_skus | escape }}')"
+      x-show="!searchQuery || searchQuery.trim() === '' || isProductVisibleByData('{{ product.title | escape }}', '{{ all_skus | escape }}', {{ product.id }})"
     >
       {%- comment -%} Image Column - only content on first row {%- endcomment -%}
       {%- if show_image -%}
@@ -196,7 +196,7 @@
     data-product-id="{{ product.id }}"
     data-product-title="{{ product.title | escape }}"
     data-product-sku="{{ all_skus | escape }}"
-    x-show="!searchQuery || searchQuery.trim() === '' || isProductVisibleByData('{{ product.title | escape }}', '{{ all_skus | escape }}')"
+    x-show="!searchQuery || searchQuery.trim() === '' || isProductVisibleByData('{{ product.title | escape }}', '{{ all_skus | escape }}', {{ product.id }})"
   >
     {%- comment -%} Image Column {%- endcomment -%}
     {%- if show_image -%}
