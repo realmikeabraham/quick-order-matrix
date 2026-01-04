@@ -106,7 +106,7 @@ All settings are accessible through the Theme Editor—no coding required:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/quick-order-matrix.git
+git clone https://github.com/realmikeabraham/quick-order-matrix.git
 cd quick-order-matrix
 
 # Install dependencies
