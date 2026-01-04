@@ -5,3 +5,4 @@ test-theme/
 *.log
 .env
 .shopify/
+.zip
