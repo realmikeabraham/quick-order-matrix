@@ -2,6 +2,8 @@
   "name": "quick-order-matrix",
   "version": "1.0.0",
   "description": "Standalone bulk ordering section for Shopify",
+  "license": "MIT",
+  "author": "Mike Abraham",
   "scripts": {
     "dev": "node scripts/sync-to-theme.js --watch",
     "build": "node scripts/build.js",

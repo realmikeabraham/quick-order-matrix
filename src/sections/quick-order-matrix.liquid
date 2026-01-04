@@ -308,14 +308,12 @@
     </div>
   </template>
 
-  {%- comment -%} Branding - can be hidden via section setting {%- endcomment -%}
-  {%- unless section.settings.hide_branding -%}
-    <div class="qom-branding">
-      <a href="https://www.matrixb2b.com" target="_blank" rel="noopener">
-        Powered by Quick Order Matrix
-      </a>
-    </div>
-  {%- endunless -%}
+  {%- comment -%} Branding {%- endcomment -%}
+  <div class="qom-branding">
+    <a href="https://www.matrixb2b.com" target="_blank" rel="noopener">
+      Powered by Quick Order Matrix
+    </a>
+  </div>
 </div>
 </div>
 
@@ -630,16 +628,6 @@
       "id": "accessibility_search",
       "label": "Search accessibility label",
       "default": "Search products"
-    },
-    {
-      "type": "header",
-      "content": "Advanced Options"
-    },
-    {
-      "type": "checkbox",
-      "id": "hide_branding",
-      "default": false,
-      "label": "Hide branding"
     }
   ]
 }
