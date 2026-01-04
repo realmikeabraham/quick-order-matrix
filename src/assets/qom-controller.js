@@ -88,16 +88,17 @@ function initQOMController() {
         this.originalTbodyContent = tbody.innerHTML;
       }
 
-      // Watch search query for lazy loading product index and filtering
+      // Load all products with inventory on page load (for instant search)
+      this.loadAllProducts();
+
+      // Watch search query for instant filtering (products are pre-loaded)
       this.$watch('searchQuery', (newQuery) => {
         if (newQuery && newQuery.trim()) {
-          if (!this.productIndexLoaded && !this.isLoadingProducts) {
-            this.loadAllProducts().then(() => {
-              this.filterAndRenderProducts();
-            });
-          } else if (this.productIndexLoaded) {
+          if (this.productIndexLoaded) {
+            // Products are cached - search is INSTANT
             this.filterAndRenderProducts();
           }
+          // If still loading, the search will run after load completes
         } else {
           // Restore original content when search is cleared
           this.restoreOriginalProducts();
@@ -282,86 +283,32 @@ function initQOMController() {
       return false;
     },
 
-    // Load all products from collection API (up to 200)
-    async loadAllProducts() {
+    // Load all products from pre-rendered JSON (no API calls needed!)
+    loadAllProducts() {
       if (this.isLoadingProducts || this.productIndexLoaded) return;
 
-      const collectionHandle = this.$el.getAttribute('data-collection-handle');
-      if (!collectionHandle) {
-        console.warn('QOM: No collection handle found, cannot load products for search');
-        return;
-      }
-
       this.isLoadingProducts = true;
-      const maxProducts = 200;
-      const productsPerPage = 250; // Maximum allowed by Shopify storefront API
-      const maxPages = Math.ceil(maxProducts / productsPerPage);
-      const allProducts = [];
-      const seenProductIds = new Set();
-      let currentPage = 1;
 
       try {
-        while (allProducts.length < maxProducts && currentPage <= maxPages) {
-          // Always include page parameter for consistency, and add limit for larger page sizes
-          const url = `/collections/${collectionHandle}/products.json?page=${currentPage}&limit=${productsPerPage}`;
-
-          let response;
-          try {
-            response = await fetch(url);
-          } catch (networkError) {
-            console.warn('QOM: Network error fetching products, trying fallback URL', networkError);
-            // Fallback to original endpoint format
-            const fallbackUrl = `/collections/${collectionHandle}.json?page=${currentPage}`;
-            response = await fetch(fallbackUrl);
-          }
-
-          if (!response.ok) {
-            // Try alternative endpoint format if first one fails
-            if (currentPage === 1) {
-              const altUrl = `/collections/${collectionHandle}.json`;
-              const altResponse = await fetch(altUrl);
-              if (altResponse.ok) {
-                const altData = await altResponse.json();
-                const altProducts = altData.products || [];
-                for (const product of altProducts) {
-                  if (!seenProductIds.has(product.id) && allProducts.length < maxProducts) {
-                    seenProductIds.add(product.id);
-                    allProducts.push(this.createProductIndexEntry(product));
-                  }
-                }
-              }
-            }
-            break;
-          }
-
-          const data = await response.json();
-          const products = data.products || [];
-
-          if (products.length === 0) break; // No more products
-
-          // Process products and add to index (avoid duplicates)
-          for (const product of products) {
-            if (allProducts.length >= maxProducts) break;
-
-            // Skip if we've already seen this product
-            if (seenProductIds.has(product.id)) continue;
-            seenProductIds.add(product.id);
-
-            allProducts.push(this.createProductIndexEntry(product));
-          }
-
-          // If we got fewer products than requested, we've likely reached the end
-          if (products.length < productsPerPage) break;
-
-          currentPage++;
+        // Read pre-rendered product data from Liquid (includes inventory!)
+        const productDataEl = document.getElementById('qom-product-data');
+        if (!productDataEl) {
+          console.warn('QOM: No pre-rendered product data found');
+          this.productIndex = [];
+          this.productIndexLoaded = true;
+          this.isLoadingProducts = false;
+          return;
         }
 
-        this.productIndex = allProducts;
+        const productData = JSON.parse(productDataEl.textContent);
+        const products = productData.products || [];
+
+        // Create index entries with complete data (already includes inventory!)
+        this.productIndex = products.map(product => this.createProductIndexEntry(product));
         this.productIndexLoaded = true;
-        console.log(`QOM: Loaded ${allProducts.length} products for search index`);
+        console.log(`QOM: Loaded ${this.productIndex.length} products with inventory (no API calls!)`);
       } catch (error) {
-        console.error('QOM: Failed to load products for search', error);
-        // Fallback: mark as loaded with empty index to prevent retries
+        console.error('QOM: Failed to parse product data', error);
         this.productIndex = [];
         this.productIndexLoaded = true;
       } finally {
@@ -451,8 +398,8 @@ function initQOMController() {
       return this.getMatchingProducts().length;
     },
 
-    // Filter products and render matching ones dynamically
-    async filterAndRenderProducts() {
+    // Filter products and render matching ones (uses cached data - no API calls)
+    filterAndRenderProducts() {
       if (!this.searchQuery || !this.searchQuery.trim()) {
         this.restoreOriginalProducts();
         return;
@@ -496,7 +443,7 @@ function initQOMController() {
       const existingDynamic = tbody.querySelectorAll('.qom-product-row--dynamic');
       existingDynamic.forEach(row => row.remove());
 
-      // Render matching products
+      // Render matching products (instant - no API calls, data is cached)
       const searchQuery = this.searchQuery.toLowerCase().trim();
 
       for (const product of matchingProducts) {
@@ -511,30 +458,16 @@ function initQOMController() {
         }
 
         // Product is not on current page, render it dynamically with search query for variant filtering
-        await this.renderProductRow(product, tbody, variantLayout, showSku, showImage, showStock, searchQuery);
+        this.renderProductRow(product, tbody, variantLayout, showSku, showImage, showStock, searchQuery);
       }
     },
 
-    // Render a single product row dynamically
-    async renderProductRow(product, tbody, variantLayout, showSku, showImage, showStock, searchQuery = '') {
+    // Render a single product row dynamically (uses cached data from productIndex)
+    renderProductRow(product, tbody, variantLayout, showSku, showImage, showStock, searchQuery = '') {
       const lowStockThreshold = parseInt(this.$el.getAttribute('data-low-stock-threshold')) || 10;
 
-      // Fetch full product data if we don't have complete variant data
-      if (!product.variants || product.variants.length === 0 || !product.variants[0].price) {
-        try {
-          const productHandle = product.handle || product.id;
-          const productUrl = `/products/${productHandle}.json`;
-          const response = await fetch(productUrl);
-          if (response.ok) {
-            const productData = await response.json();
-            if (productData.product) {
-              product = productData.product;
-            }
-          }
-        } catch (e) {
-          console.warn('QOM: Could not fetch product data', e);
-        }
-      }
+      // Product data including inventory is already cached from loadAllProducts()
+      // No API calls needed here
 
       // Filter variants based on search query if provided
       let variantsToShow = product.variants || [];
@@ -629,9 +562,11 @@ function initQOMController() {
             const vData = this.getVariantStockData(variant, lowStockThreshold);
             const variantTitle = this.escapeHtmlDynamic(variant.title || 'Default');
             const variantSku = this.escapeHtmlDynamic(variant.sku || '-');
+            // Show inventory count in parentheses if tracking is enabled
+            const inventoryLabel = vData.hasInventoryData ? ` (${vData.inventory})` : '';
 
             rowHTML += `<div class="qom-variant-cell" data-variant-id="${variant.id}">`;
-            rowHTML += `<span class="qom-variant-label">${variantTitle}</span>`;
+            rowHTML += `<span class="qom-variant-label">${variantTitle}${inventoryLabel}</span>`;
             rowHTML += `<div class="qom-variant-sku"><span class="qom-sku qom-sku--small">${variantSku}</span></div>`;
             rowHTML += `<div class="qom-qty-field${showStockBool ? ' ' + vData.stockClass : ''}"${vData.stockTooltip ? ` title="${vData.stockTooltip}"` : ''}>`;
             rowHTML += this.buildDynamicVariantInputs(variant, vData);
@@ -703,7 +638,10 @@ function initQOMController() {
         priceInCents = Math.round(priceNum);
       }
 
-      return { stockClass, stockTooltip, shouldDisable, maxQty: Math.max(0, maxQty), priceInCents };
+      // Check if inventory data is available (Shopify products.json doesn't include this)
+      const hasInventoryData = tracking !== undefined && tracking !== null;
+
+      return { stockClass, stockTooltip, shouldDisable, maxQty: Math.max(0, maxQty), priceInCents, hasInventoryData, inventory };
     },
 
     // Helper: Build variant input HTML - uses data attributes for native JS event binding

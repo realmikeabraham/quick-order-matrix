@@ -324,6 +324,49 @@
   window.qomMoneyFormat = {{ shop.money_format | json }};
 </script>
 
+{%- comment -%} Pre-render ALL product data with inventory for instant search (no API calls needed) {%- endcomment -%}
+{%- if target_collection -%}
+<script type="application/json" id="qom-product-data">
+{
+  "products": [
+    {%- assign max_search_products = 200 -%}
+    {%- assign product_count = 0 -%}
+    {%- for product in target_collection.products limit: max_search_products -%}
+      {%- assign product_count = product_count | plus: 1 -%}
+    {
+      "id": {{ product.id }},
+      "title": {{ product.title | json }},
+      "handle": {{ product.handle | json }},
+      "vendor": {{ product.vendor | json }},
+      "url": {{ product.url | json }},
+      "featured_image": {% if product.featured_image %}{{ product.featured_image | image_url: width: 100 | json }}{% else %}null{% endif %},
+      "price": {{ product.price }},
+      "price_varies": {{ product.price_varies }},
+      "price_min": {{ product.price_min }},
+      "compare_at_price": {{ product.compare_at_price | default: 0 }},
+      "variants": [
+        {%- for variant in product.variants -%}
+        {
+          "id": {{ variant.id }},
+          "title": {{ variant.title | json }},
+          "sku": {{ variant.sku | json }},
+          "price": {{ variant.price }},
+          "compare_at_price": {{ variant.compare_at_price | default: 0 }},
+          "available": {{ variant.available }},
+          "inventory_quantity": {{ variant.inventory_quantity | default: 0 }},
+          "inventory_management": {{ variant.inventory_management | json }},
+          "inventory_policy": {{ variant.inventory_policy | json }}
+        }{%- unless forloop.last -%},{%- endunless -%}
+        {%- endfor -%}
+      ]
+    }{%- unless forloop.last -%},{%- endunless -%}
+    {%- endfor -%}
+  ],
+  "total_count": {{ target_collection.products_count }}
+}
+</script>
+{%- endif -%}
+
 {% schema %}
 {
   "name": "Quick Order Matrix",

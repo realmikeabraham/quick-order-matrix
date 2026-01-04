@@ -109,7 +109,12 @@
             <span class="qom-product-vendor">{{ product.vendor }}</span>
           {%- endif -%}
         {%- endif -%}
-        <span class="qom-variant-title">{{ variant.title }}</span>
+        {%- liquid
+          assign var_inventory = variant.inventory_quantity | default: 0
+          assign var_policy = variant.inventory_policy
+          assign var_tracking = variant.inventory_management
+        -%}
+        <span class="qom-variant-title">{{ variant.title }}{% if var_tracking != blank %} ({{ var_inventory }}){% endif %}</span>
       </td>
 
       {%- comment -%} Price Column - variant price {%- endcomment -%}

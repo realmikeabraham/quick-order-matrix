@@ -135,7 +135,7 @@
           endif
         -%}
         <div class="qom-variant-cell" data-variant-id="{{ variant.id }}">
-          <span class="qom-variant-label">{{ variant.title }}</span>
+          <span class="qom-variant-label">{{ variant.title }}{% if tracking != blank %} ({{ inventory }}){% endif %}</span>
           {%- comment -%} Inline SKU with copy button {%- endcomment -%}
           <div class="qom-variant-sku">
             <span class="qom-sku qom-sku--small">{{ variant.sku | default: '-' }}</span>
