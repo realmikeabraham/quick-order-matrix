@@ -10,7 +10,7 @@ Quick Order Matrix transforms your Shopify store into a powerful wholesale order
 
 > ⭐ **Love this project? Give us a star on GitHub!** It helps others discover us and motivates continued development.
 
-![Quick Order Matrix Preview](docs/preview.png)
+![Quick Order Matrix Preview](docs/quick-order-matrix-preview.png)
 
 ---
 
