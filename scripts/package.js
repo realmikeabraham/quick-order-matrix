@@ -28,12 +28,10 @@ async function package() {
     console.log('📦 Packaging Quick Order Matrix...\n');
 
     try {
-        // Check if dist exists, if not run build first
-        if (!(await fs.pathExists(DIST_DIR))) {
-            console.log('⚠️  dist/ folder not found. Running build first...\n');
-            execSync('npm run build', { cwd: ROOT_DIR, stdio: 'inherit' });
-            console.log('');
-        }
+        // Always run build to ensure dist/ is fresh and complete
+        console.log('🔨 Running build to ensure dist/ is fresh...\n');
+        execSync('npm run build', { cwd: ROOT_DIR, stdio: 'inherit' });
+        console.log('');
 
         // Remove existing zip if present
         if (await fs.pathExists(ZIP_PATH)) {
@@ -60,13 +58,9 @@ async function package() {
             // Add the dist folder contents (sections/, snippets/, assets/)
             archive.directory(DIST_DIR, false);
 
-            // Add README and LICENSE to the zip
-            const readmePath = path.join(ROOT_DIR, 'README.md');
+            // Add LICENSE to the zip
             const licensePath = path.join(ROOT_DIR, 'LICENSE');
 
-            if (fs.existsSync(readmePath)) {
-                archive.file(readmePath, { name: 'README.md' });
-            }
             if (fs.existsSync(licensePath)) {
                 archive.file(licensePath, { name: 'LICENSE' });
             }
