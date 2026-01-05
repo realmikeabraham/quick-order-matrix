@@ -57,7 +57,7 @@ Quick Order Matrix transforms your Shopify store into a powerful wholesale order
 Clone this repository and copy the `src/` contents to your theme:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/quick-order-matrix.git
+git clone https://github.com/realmikeabraham/quick-order-matrix.git
 cd quick-order-matrix
 
 # Copy to your theme
@@ -112,12 +112,17 @@ cd quick-order-matrix
 # Install dependencies
 npm install
 
+# Pull a theme from your Shopify store into test-theme directory
+shopify theme pull --store your-store.myshopify.com --path test-theme
+
 # Start development mode (syncs changes to test-theme)
 npm run dev
 
 # In a separate terminal, start Shopify theme dev server
 npm run theme:dev
 ```
+
+> **Note**: Replace `your-store.myshopify.com` with your actual Shopify store URL. You'll need to authenticate with Shopify CLI if you haven't already (`shopify auth login`).
 
 ### Project Structure
 
